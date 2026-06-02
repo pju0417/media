@@ -55,28 +55,65 @@ let state;
 (function initState() {
   try {
     const raw = localStorage.getItem('fnd_v1');
-    if (!raw) { state = freshState(); return; }
-    state = JSON.parse(raw);
-    if (!state.roundResults)          state.roundResults = [];
-    if (!state.investInputs)          state.investInputs = {};
-    if (!state.auction)               state.auction = { price: DEF_START, activeBidders: [], status: 'bidding', winner: null };
-    if (state.revealIndex == null)    state.revealIndex = 0;
-    if (state.resultsApplied == null) state.resultsApplied = false;
-    if (!state.bundles)               state.bundles = [];
-    if (state.activeBundleId == null) state.activeBundleId = null;
-    if (state.expandedBundleId == null) state.expandedBundleId = null;
-    if (state.correctBonus == null)   state.correctBonus = DEF_CORRECT_BONUS;
-    if (!state.playerBonuses)         state.playerBonuses = {};
-    // 구버전 뉴스의 weight 필드 정리 (더 이상 사용 안 함)
-    state.news.forEach(n => { delete n.weight; });
-    if (!state.players?.length) state = freshState();
+    if (!raw) { state = freshState(); }
+    else {
+      state = JSON.parse(raw);
+      if (!state.roundResults)           state.roundResults = [];
+      if (!state.investInputs)           state.investInputs = {};
+      if (!state.auction)                state.auction = { price: DEF_START, activeBidders: [], status: 'bidding', winner: null };
+      if (state.revealIndex == null)     state.revealIndex = 0;
+      if (state.resultsApplied == null)  state.resultsApplied = false;
+      if (!state.bundles)                state.bundles = [];
+      if (state.activeBundleId == null)  state.activeBundleId = null;
+      if (state.expandedBundleId == null) state.expandedBundleId = null;
+      if (state.correctBonus == null)    state.correctBonus = DEF_CORRECT_BONUS;
+      if (!state.playerBonuses)          state.playerBonuses = {};
+      if (!state.news)                   state.news = [];
+      state.news.forEach(n => { delete n.weight; });
+      if (!state.players?.length) state = freshState();
+    }
   } catch {
     state = freshState();
+  }
+
+  // ── 기본 내장 뉴스 팩 주입 ──────────────────────────────
+  // default-news.js 가 window.FND_BUILTIN 을 정의한 경우에만 실행
+  if (window.FND_BUILTIN) {
+    const builtin = window.FND_BUILTIN;
+
+    // 1) 뉴스 목록에 내장 뉴스 추가 / imageData 복원
+    //    (localStorage 절약을 위해 imageData는 저장하지 않고 매번 JS에서 주입)
+    builtin.news.forEach(bn => {
+      const existing = state.news.find(n => n.id === bn.id);
+      if (existing) {
+        existing.imageData = bn.imageData;   // 매번 JS에서 이미지 복원
+        existing.builtin   = true;
+      } else {
+        // 목록 맨 앞에 삽입
+        state.news.unshift({ id: bn.id, title: bn.title, imageData: bn.imageData, answer: bn.answer, builtin: true });
+      }
+    });
+
+    // 2) 기본 꾸러미가 없으면 추가
+    if (!state.bundles.find(b => b.id === builtin.bundle.id)) {
+      state.bundles.unshift({ ...builtin.bundle });
+    }
   }
 })();
 
 function save() {
-  try { localStorage.setItem('fnd_v1', JSON.stringify(state)); } catch (e) { /* storage full */ }
+  try {
+    // 내장 뉴스의 imageData는 localStorage에 저장하지 않음 (용량 절약)
+    const toSave = {
+      ...state,
+      news: state.news.map(n =>
+        n.builtin ? { id: n.id, title: n.title, answer: n.answer, builtin: true } : n
+      ),
+    };
+    localStorage.setItem('fnd_v1', JSON.stringify(toSave));
+  } catch (e) {
+    console.warn('localStorage 저장 실패:', e);
+  }
 }
 
 // ================================================================
