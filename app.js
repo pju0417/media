@@ -989,7 +989,7 @@ function handleClick(e) {
       state.browseIndex = 0; state.phase = 'browse'; break;
 
     case 'select-mode':
-      state.mode = el.dataset.mode; state.adminTab = 'bundles'; state.phase = 'admin'; break;
+      state.mode = el.dataset.mode; break;
 
     case 'tab': state.adminTab = el.dataset.tab; break;
 
