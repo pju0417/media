@@ -8,17 +8,18 @@ const COLORS = [
   '#cc5de8', '#20c997', '#ffd43b', '#ff6b9d'
 ];
 
-const DEF_BALANCE = 1_000_000;
-const DEF_START   =   100_000;
-const DEF_STEP    =    50_000;
+const DEF_BALANCE      = 1_000_000;
+const DEF_START        =   100_000;
+const DEF_STEP         =    50_000;
+const DEF_CORRECT_BONUS =  150_000;  // 정답 1개당 추가 보너스 기본값
 
 // ================================================================
 // STATE
 // ================================================================
 function freshState() {
   return {
-    phase: 'home',           // home | admin | browse | game | results
-    mode: null,              // 'auction' | 'investment'
+    phase: 'home',
+    mode: null,
     adminTab: 'players',
     players: Array.from({ length: 4 }, (_, i) => ({
       id: i + 1,
@@ -27,19 +28,24 @@ function freshState() {
       history: [],
     })),
     news: [],                // [{ id, title, imageData, answer }]
+    bundles: [],             // [{ id, name, newsIds:[] }]
+    activeBundleId: null,
+    expandedBundleId: null,
     initialBalance: DEF_BALANCE,
     auctionStartPrice: DEF_START,
     auctionStep: DEF_STEP,
+    correctBonus: DEF_CORRECT_BONUS,  // 정답 1개당 추가 보너스
+    playerBonuses: {},       // { playerId: { cnt, bonus } } — 결과 계산 후 저장
     browseIndex: 0,
     gameIndex: 0,
     auction: {
       price: DEF_START,
       activeBidders: [],
-      status: 'bidding',     // bidding | selectWinner | awarded | passed
+      status: 'bidding',
       winner: null,
     },
-    investInputs: {},        // { playerId: { side, amount, confirmed } }
-    roundResults: [],        // [{ purchase } | { investments }]
+    investInputs: {},
+    roundResults: [],
     revealIndex: 0,
     resultsApplied: false,
   };
@@ -51,13 +57,19 @@ let state;
     const raw = localStorage.getItem('fnd_v1');
     if (!raw) { state = freshState(); return; }
     state = JSON.parse(raw);
-    // Ensure new fields exist (back-compat)
-    if (!state.roundResults)       state.roundResults = [];
-    if (!state.investInputs)       state.investInputs = {};
-    if (!state.auction)            state.auction = { price: DEF_START, activeBidders: [], status: 'bidding', winner: null };
-    if (state.revealIndex == null) state.revealIndex = 0;
+    if (!state.roundResults)          state.roundResults = [];
+    if (!state.investInputs)          state.investInputs = {};
+    if (!state.auction)               state.auction = { price: DEF_START, activeBidders: [], status: 'bidding', winner: null };
+    if (state.revealIndex == null)    state.revealIndex = 0;
     if (state.resultsApplied == null) state.resultsApplied = false;
-    if (!state.players?.length)    state = freshState();
+    if (!state.bundles)               state.bundles = [];
+    if (state.activeBundleId == null) state.activeBundleId = null;
+    if (state.expandedBundleId == null) state.expandedBundleId = null;
+    if (state.correctBonus == null)   state.correctBonus = DEF_CORRECT_BONUS;
+    if (!state.playerBonuses)         state.playerBonuses = {};
+    // 구버전 뉴스의 weight 필드 정리 (더 이상 사용 안 함)
+    state.news.forEach(n => { delete n.weight; });
+    if (!state.players?.length) state = freshState();
   } catch {
     state = freshState();
   }
@@ -92,6 +104,24 @@ function colorById(id) {
   return color(state.players.findIndex(p => p.id === id));
 }
 
+function getActiveNews() {
+  if (!state.activeBundleId) return state.news;
+  const bundle = state.bundles.find(b => b.id === state.activeBundleId);
+  if (!bundle) return state.news;
+  return bundle.newsIds
+    .map(nid => state.news.find(n => n.id === nid))
+    .filter(Boolean);
+}
+
+function checkStartable() {
+  const activeNews = getActiveNews();
+  if (!state.mode)             return { ok: false, reason: '홈에서 게임 모드를 선택하세요' };
+  if (activeNews.length < 2)  return { ok: false, reason: '뉴스가 2개 이상 필요합니다' };
+  if (activeNews.some(n => !n.answer))
+    return { ok: false, reason: '⚠️ 진위 미설정 뉴스가 있습니다' };
+  return { ok: true };
+}
+
 // ================================================================
 // RENDER DISPATCHER
 // ================================================================
@@ -116,7 +146,9 @@ function render() {
 // VIEW: HOME
 // ================================================================
 function viewHome() {
-  const ready = state.news.length >= 2 && state.mode;
+  const { ok } = checkStartable();
+  const activeBundle = state.bundles.find(b => b.id === state.activeBundleId);
+
   return `
 <div class="home">
   <div class="home-hero">
@@ -136,6 +168,7 @@ function viewHome() {
       <ul class="mc-rules">
         <li>진짜 뉴스 구매 → 투자금 × 2 수익</li>
         <li>가짜 뉴스 구매 → 투자금 손실</li>
+        <li>진짜 많이 맞출수록 추가 보너스!</li>
       </ul>
     </button>
     <button class="mode-card ${state.mode === 'investment' ? 'selected' : ''}"
@@ -146,13 +179,26 @@ function viewHome() {
       <ul class="mc-rules">
         <li>정답 방향 투자 → 투자금 × 2 수익</li>
         <li>오답 방향 투자 → 투자금 손실</li>
+        <li>진짜 많이 맞출수록 추가 보너스!</li>
       </ul>
     </button>
   </div>
 
+  ${activeBundle ? `
+  <div class="active-bundle-display">
+    <span class="abd-label">📦 선택된 꾸러미</span>
+    <span class="abd-name">${esc(activeBundle.name)}</span>
+    <span class="abd-count">${activeBundle.newsIds.length}개</span>
+  </div>` : ''}
+
+  ${state.correctBonus > 0 ? `
+  <div class="bonus-rule-display">
+    🎯 정답 1개당 <strong>${won(state.correctBonus)}</strong> 추가 보너스
+  </div>` : ''}
+
   <div class="home-btns">
     <button class="btn btn-outline" data-action="go-admin">⚙️ 관리자 패널</button>
-    ${ready ? `<button class="btn btn-gold btn-lg" data-action="go-browse">▶ 게임 시작</button>` : ''}
+    ${ok ? `<button class="btn btn-gold btn-lg" data-action="go-browse">▶ 게임 시작</button>` : ''}
   </div>
 </div>`;
 }
@@ -162,8 +208,8 @@ function viewHome() {
 // ================================================================
 function viewAdmin() {
   const tab = state.adminTab || 'players';
-  const allAnswered = state.news.length > 0 && state.news.every(n => n.answer);
-  const canStart = state.news.length >= 2 && state.mode && allAnswered;
+  const { ok, reason } = checkStartable();
+  const activeBundle = state.bundles.find(b => b.id === state.activeBundleId);
 
   return `
 <div class="admin">
@@ -171,29 +217,35 @@ function viewAdmin() {
     <button class="btn btn-ghost" data-action="go-home">← 홈</button>
     <h2>⚙️ 관리자 패널</h2>
     <span class="mode-badge">
-      ${state.mode === 'auction' ? '🏛️ 경매 모드' : state.mode === 'investment' ? '📈 투자 모드' : '모드 미선택'}
+      ${state.mode === 'auction' ? '🏛️ 경매' : state.mode === 'investment' ? '📈 투자' : '모드 미선택'}
     </span>
   </div>
 
   <div class="tabs">
     <button class="tab ${tab === 'players'  ? 'active' : ''}" data-action="tab" data-tab="players">👥 플레이어</button>
     <button class="tab ${tab === 'news'     ? 'active' : ''}" data-action="tab" data-tab="news">📰 뉴스 카드</button>
+    <button class="tab ${tab === 'bundles'  ? 'active' : ''}" data-action="tab" data-tab="bundles">
+      📦 꾸러미${activeBundle ? ' ✅' : ''}
+    </button>
     <button class="tab ${tab === 'settings' ? 'active' : ''}" data-action="tab" data-tab="settings">⚙️ 설정</button>
   </div>
 
   <div class="tab-content">
     ${tab === 'players'  ? tabPlayers()  : ''}
     ${tab === 'news'     ? tabNews()     : ''}
+    ${tab === 'bundles'  ? tabBundles()  : ''}
     ${tab === 'settings' ? tabSettings() : ''}
   </div>
 
   <div class="admin-footer">
-    ${canStart
-      ? `<button class="btn btn-success btn-lg" data-action="start-browse">🎮 게임 시작 — 뉴스 ${state.news.length}개</button>`
-      : `<p class="hint-footer">
-           게임 시작 조건: 홈에서 모드 선택 &nbsp;·&nbsp; 뉴스 2개 이상 &nbsp;·&nbsp; 모든 뉴스 진위 설정
-           ${state.news.some(n => !n.answer) ? '<br><span style="color:var(--red)">⚠️ 진위 미설정 뉴스가 있습니다</span>' : ''}
-         </p>`}
+    ${ok
+      ? `<button class="btn btn-success btn-lg" data-action="start-browse">
+           🎮 게임 시작
+           ${activeBundle
+             ? `— ${esc(activeBundle.name)} (${getActiveNews().length}개)`
+             : `— 전체 뉴스 (${state.news.length}개)`}
+         </button>`
+      : `<p class="hint-footer">${reason}</p>`}
   </div>
 </div>`;
 }
@@ -206,7 +258,6 @@ function tabPlayers() {
     <button class="btn btn-sm btn-primary" data-action="add-player"
             ${state.players.length >= 8 ? 'disabled' : ''}>+ 추가</button>
   </div>
-
   <div class="player-list">
     ${state.players.map((p, i) => `
     <div class="player-row" style="--c:${color(i)}">
@@ -218,7 +269,6 @@ function tabPlayers() {
               ${state.players.length <= 1 ? 'disabled' : ''}>✕</button>
     </div>`).join('')}
   </div>
-
   <div class="balance-box">
     <label class="balance-label">
       초기 잔액
@@ -237,7 +287,6 @@ function tabNews() {
   <div class="sec-hdr">
     <h3>뉴스 카드 (${state.news.length}개)</h3>
   </div>
-
   <label class="upload-zone">
     <input type="file" accept="image/*" multiple data-action="upload-news" style="display:none">
     <div class="upload-inner">
@@ -246,7 +295,6 @@ function tabNews() {
       <div class="upload-sub">여러 장 동시 선택 가능 · JPG, PNG, GIF 등</div>
     </div>
   </label>
-
   ${state.news.length === 0
     ? `<p class="empty-msg">뉴스 카드가 없습니다. 이미지를 업로드해 주세요.</p>`
     : `<div class="news-grid">
@@ -266,6 +314,86 @@ function tabNews() {
           <button class="btn btn-sm btn-danger" data-action="del-news" data-id="${n.id}">삭제</button>
         </div>`).join('')}
       </div>`}
+</div>`;
+}
+
+function tabBundles() {
+  const hasNews = state.news.length > 0;
+  return `
+<div class="admin-sec">
+  <div class="sec-hdr">
+    <h3>뉴스 꾸러미 (${state.bundles.length}개)</h3>
+    <button class="btn btn-sm btn-primary" data-action="add-bundle"
+            ${!hasNews ? 'disabled' : ''}>+ 새 꾸러미</button>
+  </div>
+
+  ${!hasNews
+    ? `<p class="empty-msg">뉴스 카드를 먼저 등록하면 꾸러미를 만들 수 있습니다.</p>`
+    : state.bundles.length === 0
+      ? `<p class="empty-msg">꾸러미가 없습니다.<br>꾸러미 없이 게임하면 <strong>전체 뉴스(${state.news.length}개)</strong>가 사용됩니다.</p>`
+      : ''}
+
+  <div class="bundle-list">
+    ${state.bundles.map(b => {
+      const isActive   = state.activeBundleId === b.id;
+      const isExpanded = state.expandedBundleId === b.id;
+      const bundleNews = b.newsIds.map(nid => state.news.find(n => n.id === nid)).filter(Boolean);
+      const canSelect  = bundleNews.length >= 2 && bundleNews.every(n => n.answer);
+
+      return `
+      <div class="bundle-card ${isActive ? 'bundle-active' : ''}">
+        <div class="bundle-hdr">
+          <div class="bundle-hdr-left">
+            ${isActive ? '<span class="bundle-playing">🎮 게임 중</span>' : ''}
+            <input class="bundle-name-input" type="text" value="${esc(b.name)}"
+                   data-action="edit-bundle-name" data-id="${b.id}">
+          </div>
+          <div class="bundle-hdr-right">
+            <span class="bundle-count">${bundleNews.length}개</span>
+            ${!isActive
+              ? `<button class="btn btn-sm ${canSelect ? 'btn-success' : 'btn-outline'}"
+                         data-action="select-bundle" data-id="${b.id}"
+                         ${!canSelect ? 'disabled' : ''}>선택</button>`
+              : `<button class="btn btn-sm btn-outline" data-action="deselect-bundle">해제</button>`}
+            <button class="btn btn-sm btn-ghost" data-action="expand-bundle" data-id="${b.id}">
+              ${isExpanded ? '▲ 접기' : '▼ 편집'}
+            </button>
+            <button class="btn btn-sm btn-danger" data-action="del-bundle" data-id="${b.id}">✕</button>
+          </div>
+        </div>
+
+        ${isExpanded ? `
+        <div class="bundle-body">
+          <div class="bundle-hint">클릭하여 뉴스를 추가/제거하세요</div>
+          <div class="bundle-news-grid">
+            ${state.news.map((n, ni) => {
+              const included = b.newsIds.includes(n.id);
+              return `
+            <button class="bng-item ${included ? 'bng-included' : ''}"
+                    data-action="toggle-bundle-news" data-id="${n.id}" data-bid="${b.id}">
+              <img src="${n.imageData}" alt="">
+              <div class="bng-overlay">
+                ${included ? '<span class="bng-check">✅</span>' : '<span class="bng-plus">+</span>'}
+              </div>
+              <div class="bng-info">
+                <span class="bng-num">#${ni + 1}</span>
+                ${n.answer === 'real' ? '<span class="bng-tag bng-real">진짜</span>'
+                  : n.answer === 'fake' ? '<span class="bng-tag bng-fake">가짜</span>'
+                  : '<span class="bng-tag bng-none">미설정</span>'}
+              </div>
+            </button>`;
+            }).join('')}
+          </div>
+          ${bundleNews.length > 0 ? `
+          <div class="bundle-summary">
+            <span>진짜: ${bundleNews.filter(n => n.answer === 'real').length}개</span>
+            <span>가짜: ${bundleNews.filter(n => n.answer === 'fake').length}개</span>
+            <span>미설정: ${bundleNews.filter(n => !n.answer).length}개</span>
+          </div>` : ''}
+        </div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>
 </div>`;
 }
 
@@ -292,7 +420,37 @@ function tabSettings() {
     </div>
   </div>
 
-  <div class="danger-zone">
+  <hr style="border-color:var(--border);margin:24px 0">
+  <h3 style="margin-bottom:8px">🎯 정답 보너스 설정</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.7">
+    진짜 뉴스를 정확히 구매하거나 투자할 때마다 추가 보너스를 지급합니다.<br>
+    <strong style="color:var(--gold)">예시:</strong>
+    정답 2개 × ${won(state.correctBonus)} = ${won(state.correctBonus * 2)} 보너스
+  </p>
+
+  <div class="setting-item">
+    <label>정답 1개당 보너스</label>
+    <div class="setting-row">
+      <input type="number" class="num-input" value="${state.correctBonus}"
+             step="50000" min="0" data-action="set-correct-bonus">
+      <span>원</span>
+      <span style="font-size:12px;color:var(--text-faint)">(0원 = 보너스 없음)</span>
+    </div>
+  </div>
+
+  <div class="bonus-preview-box">
+    <div class="bpb-title">정답 개수별 보너스 미리보기</div>
+    <div class="bpb-rows">
+      ${[1,2,3,4,5].map(cnt => `
+      <div class="bpb-row">
+        <span class="bpb-cnt">정답 ${cnt}개</span>
+        <span class="bpb-arr">→</span>
+        <span class="bpb-val">+${won(cnt * state.correctBonus)}</span>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="danger-zone" style="margin-top:32px">
     <h4>⚠️ 데이터 초기화</h4>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-danger" data-action="reset-game">게임 결과 초기화</button>
@@ -306,9 +464,11 @@ function tabSettings() {
 // VIEW: BROWSE
 // ================================================================
 function viewBrowse() {
-  const n = state.news[state.browseIndex];
-  const total = state.news.length;
-  const idx = state.browseIndex;
+  const activeNews = getActiveNews();
+  const n     = activeNews[state.browseIndex];
+  const total = activeNews.length;
+  const idx   = state.browseIndex;
+  const activeBundle = state.bundles.find(b => b.id === state.activeBundleId);
 
   return `
 <div class="browse">
@@ -316,8 +476,9 @@ function viewBrowse() {
     <button class="btn btn-ghost" data-action="go-admin">← 관리자</button>
     <div class="browse-counter">
       <span class="bc-text">${idx + 1} / ${total}</span>
+      ${activeBundle ? `<div style="font-size:11px;color:var(--gold-dim);margin-top:2px">📦 ${esc(activeBundle.name)}</div>` : ''}
       <div class="bc-dots">
-        ${state.news.map((_, i) =>
+        ${activeNews.map((_, i) =>
           `<span class="dot ${i < idx ? 'seen' : i === idx ? 'cur' : ''}"></span>`
         ).join('')}
       </div>
@@ -363,11 +524,11 @@ function statusBar() {
 // VIEW: AUCTION
 // ================================================================
 function viewAuction() {
-  const { auction, gameIndex, news } = state;
-  const n = news[gameIndex];
-  const total = news.length;
+  const { auction, gameIndex } = state;
+  const activeNews = getActiveNews();
+  const n     = activeNews[gameIndex];
+  const total = activeNews.length;
 
-  // ── Awarded / Passed result screen ──
   if (auction.status === 'awarded' || auction.status === 'passed') {
     const isLast = gameIndex >= total - 1;
     const nextBtn = `<button class="btn btn-primary btn-lg" data-action="auction-next">
@@ -401,7 +562,6 @@ function viewAuction() {
     }
   }
 
-  // ── Multiple-bidder winner selection ──
   if (auction.status === 'selectWinner') {
     const candidates = state.players.filter(p => auction.activeBidders.includes(p.id));
     return `
@@ -423,7 +583,6 @@ function viewAuction() {
 </div>`;
   }
 
-  // ── Main bidding UI ──
   return `
 <div class="auction">
   ${statusBar()}
@@ -432,40 +591,29 @@ function viewAuction() {
       <span class="news-badge">뉴스 ${gameIndex + 1} / ${total}</span>
       ${n.title ? `<span class="news-label">${esc(n.title)}</span>` : ''}
     </div>
-
     <div class="auction-layout">
-      <!-- 뉴스 이미지 -->
       <div class="au-img-col">
         <img src="${n.imageData}" class="au-img"
              data-action="zoom" data-src="${n.imageData}" alt="뉴스">
       </div>
-
-      <!-- 교사 조작 패널 -->
       <div class="au-ctrl-col">
         <div class="price-box">
           <div class="price-lbl">현재 입찰가</div>
           <div class="price-val">${won(auction.price)}</div>
           <div class="price-start">시작가: ${won(state.auctionStartPrice)}</div>
         </div>
-
         <div class="teacher-btns">
           <button class="btn btn-raise" data-action="raise-price">
-            📈 가격 올리기<br>
-            <small>+${won(state.auctionStep)}</small>
+            📈 가격 올리기<br><small>+${won(state.auctionStep)}</small>
           </button>
           <div class="t-row">
             <button class="btn btn-success" data-action="finalize"
-                    ${auction.activeBidders.length === 0 ? 'disabled' : ''}>
-              🔨 낙찰!
-            </button>
+                    ${auction.activeBidders.length === 0 ? 'disabled' : ''}>🔨 낙찰!</button>
             <button class="btn btn-outline" data-action="pass-auction">유찰 (패스)</button>
           </div>
         </div>
-
         <div class="bidders-section">
-          <div class="bidders-title">
-            입찰자 선택 <span class="bidders-hint">(교사 조작)</span>
-          </div>
+          <div class="bidders-title">입찰자 선택 <span class="bidders-hint">(교사 조작)</span></div>
           <div class="bidder-grid">
             ${state.players.map((p, i) => {
               const active = auction.activeBidders.includes(p.id);
@@ -492,9 +640,10 @@ function viewAuction() {
 // VIEW: INVESTMENT
 // ================================================================
 function viewInvestment() {
-  const { gameIndex, news, investInputs } = state;
-  const n = news[gameIndex];
-  const total = news.length;
+  const { gameIndex, investInputs } = state;
+  const activeNews = getActiveNews();
+  const n     = activeNews[gameIndex];
+  const total = activeNews.length;
 
   const confirmedCount = state.players.filter(p => {
     const inp = investInputs[p.id];
@@ -509,19 +658,17 @@ function viewInvestment() {
     <span class="news-badge">뉴스 ${gameIndex + 1} / ${total}</span>
     ${n.title ? `<span class="news-label">${esc(n.title)}</span>` : ''}
   </div>
-
   <div class="inv-layout">
-    <!-- 뉴스 이미지 -->
     <div class="inv-img-col">
       <img src="${n.imageData}" class="inv-img"
            data-action="zoom" data-src="${n.imageData}" alt="뉴스">
-      <div class="inv-tip">💡 이 뉴스가 진짜인지 가짜인지<br>확신하는 만큼 투자하세요!</div>
+      <div class="inv-tip">
+        💡 이 뉴스가 진짜인지 가짜인지<br>확신하는 만큼 투자하세요!
+      </div>
     </div>
-
-    <!-- 플레이어 투자 패널 -->
     <div class="inv-players">
       ${state.players.map((p, i) => {
-        const inp = investInputs[p.id] || {};
+        const inp   = investInputs[p.id] || {};
         const broke = p.balance <= 0;
 
         if (inp.confirmed) {
@@ -536,7 +683,6 @@ function viewInvestment() {
           <div class="inv-done">✅ 투자 완료 — ${sideText} &nbsp;/&nbsp; ${amtText}</div>
         </div>`;
         }
-
         if (broke) {
           return `
         <div class="inv-row inv-confirmed" style="--c:${color(i)}">
@@ -547,7 +693,6 @@ function viewInvestment() {
           <div class="inv-done" style="color:var(--red)">⚠️ 잔액 없음 — 자동 패스</div>
         </div>`;
         }
-
         return `
         <div class="inv-row" style="--c:${color(i)}">
           <div class="inv-row-hdr">
@@ -579,7 +724,6 @@ function viewInvestment() {
       }).join('')}
     </div>
   </div>
-
   <div class="inv-footer">
     <button class="btn btn-success btn-lg" data-action="invest-next" ${!allDone ? 'disabled' : ''}>
       ${allDone
@@ -594,14 +738,15 @@ function viewInvestment() {
 // VIEW: RESULTS
 // ================================================================
 function viewResults() {
-  const { revealIndex, news, players, initialBalance } = state;
+  const { revealIndex, players, initialBalance, playerBonuses, correctBonus } = state;
+  const activeNews = getActiveNews();
 
-  // ── Reveal individual news results ──
-  if (revealIndex < news.length) {
-    const n       = news[revealIndex];
-    const isReal  = n.answer === 'real';
-    const result  = state.roundResults[revealIndex];
-    const isLast  = revealIndex >= news.length - 1;
+  // ── 뉴스별 결과 공개 ──
+  if (revealIndex < activeNews.length) {
+    const n      = activeNews[revealIndex];
+    const isReal = n.answer === 'real';
+    const result = state.roundResults[revealIndex];
+    const isLast = revealIndex >= activeNews.length - 1;
 
     let rows = '';
     if (state.mode === 'auction') {
@@ -614,7 +759,7 @@ function viewResults() {
         <div class="result-row ${win ? 'r-win' : 'r-lose'}">
           <span style="color:${color(bi)};font-weight:700">${esc(buyer?.name)}</span>
           <span>${won(price)} 구매</span>
-          <span>${win ? '✅ 진짜 구매 → +' + won(price) + ' 수익' : '❌ 가짜 구매 → ' + won(price) + ' 손실'}</span>
+          <span>${win ? `✅ 진짜! × 2 → +${won(price)} 수익` : `❌ 가짜 → ${won(price)} 손실`}</span>
         </div>`;
       } else {
         rows = `<div class="result-row">🚫 유찰 — 구매자 없음</div>`;
@@ -630,8 +775,8 @@ function viewResults() {
             return `
           <div class="result-row ${win ? 'r-win' : 'r-lose'}">
             <span style="color:${color(pi)};font-weight:700">${esc(p?.name)}</span>
-            <span>${inv.side === 'real' ? '진짜' : '가짜'} ${won(inv.amount)} 투자</span>
-            <span>${win ? '✅ 적중 → +' + won(inv.amount) + ' 수익' : '❌ 실패 → ' + won(inv.amount) + ' 손실'}</span>
+            <span>${inv.side === 'real' ? '진짜' : '가짜'} ${won(inv.amount)}</span>
+            <span>${win ? `✅ 적중! × 2 → +${won(inv.amount)} 수익` : `❌ 실패 → ${won(inv.amount)} 손실`}</span>
           </div>`;
           }).join('');
     }
@@ -640,9 +785,8 @@ function viewResults() {
 <div class="results">
   <div class="reveal-hdr">
     <h2>🔍 결과 공개</h2>
-    <span class="reveal-count">${revealIndex + 1} / ${news.length}</span>
+    <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
   </div>
-
   <div class="reveal-card">
     <img src="${n.imageData}" class="reveal-img" alt="">
     <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}">
@@ -650,37 +794,61 @@ function viewResults() {
       <div class="rb-text">${isReal ? '진짜 뉴스' : '가짜 뉴스'}</div>
     </div>
   </div>
-
   <div class="result-rows">${rows}</div>
-
   <button class="btn btn-primary btn-lg" data-action="reveal-next">
-    ${isLast ? '🏆 최종 순위 보기' : '다음 공개 →'}
+    ${isLast ? '🏆 보너스 & 최종 순위 보기' : '다음 공개 →'}
   </button>
 </div>`;
   }
 
-  // ── Final standings ──
+  // ── 보너스 & 최종 순위 ──
   const sorted = [...players]
     .map((p, i) => ({ ...p, origIdx: i }))
     .sort((a, b) => b.balance - a.balance);
 
+  const hasBonus = correctBonus > 0 && Object.keys(playerBonuses).length > 0;
+
   return `
 <div class="results">
+  ${hasBonus ? `
+  <div class="bonus-announce">
+    <div class="ba-title">🎯 정답 보너스 지급!</div>
+    <div class="ba-subtitle">정답 1개당 ${won(correctBonus)} 추가</div>
+    <div class="ba-rows">
+      ${players.map((p, i) => {
+        const pb = playerBonuses[p.id];
+        if (!pb || pb.cnt === 0) return '';
+        return `
+        <div class="ba-row">
+          <span style="color:${color(i)};font-weight:700">${esc(p.name)}</span>
+          <span class="ba-cnt">정답 ${pb.cnt}개</span>
+          <span class="ba-bonus">× ${won(correctBonus)} = <strong>+${won(pb.bonus)}</strong></span>
+        </div>`;
+      }).filter(Boolean).join('')}
+    </div>
+  </div>` : ''}
+
   <div class="reveal-hdr">
     <h2>🏆 최종 결과</h2>
   </div>
 
   <div class="standings">
     ${sorted.map((p, rank) => {
-      const diff  = p.balance - initialBalance;
-      const medal = ['🥇', '🥈', '🥉'][rank] ?? `${rank + 1}위`;
+      const diff    = p.balance - initialBalance;
+      const medal   = ['🥇', '🥈', '🥉'][rank] ?? `${rank + 1}위`;
+      const pb      = playerBonuses[p.id];
       return `
     <div class="standing-row ${rank === 0 ? 'st-first' : ''}">
       <div class="st-medal">${medal}</div>
-      <div class="st-name" style="color:${color(p.origIdx)}">${esc(p.name)}</div>
-      <div class="st-bal">${won(p.balance)}</div>
-      <div class="st-diff ${diff >= 0 ? 'diff-pos' : 'diff-neg'}">
-        ${diff >= 0 ? '+' : ''}${won(diff)}
+      <div class="st-main">
+        <div class="st-name" style="color:${color(p.origIdx)}">${esc(p.name)}</div>
+        ${pb?.cnt > 0 ? `<div class="st-bonus-line">🎯 정답 ${pb.cnt}개 보너스 +${won(pb.bonus)}</div>` : ''}
+      </div>
+      <div class="st-right">
+        <div class="st-bal">${won(p.balance)}</div>
+        <div class="st-diff ${diff >= 0 ? 'diff-pos' : 'diff-neg'}">
+          ${diff >= 0 ? '+' : ''}${won(diff)}
+        </div>
       </div>
     </div>`;
     }).join('')}
@@ -697,22 +865,13 @@ function viewResults() {
 // GAME LOGIC
 // ================================================================
 function initAuctionRound() {
-  state.auction = {
-    price: state.auctionStartPrice,
-    activeBidders: [],
-    status: 'bidding',
-    winner: null,
-  };
+  state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
 }
 
 function initInvestRound() {
   state.investInputs = {};
   state.players.forEach(p => {
-    state.investInputs[p.id] = {
-      side: null,
-      amount: '',
-      confirmed: p.balance <= 0,   // auto-pass if broke
-    };
+    state.investInputs[p.id] = { side: null, amount: '', confirmed: p.balance <= 0 };
   });
 }
 
@@ -720,14 +879,8 @@ function awardTo(playerId) {
   const price  = state.auction.price;
   const player = state.players.find(p => p.id === playerId);
   if (!player || player.balance < price) return;
-
   player.balance -= price;
-  player.history.push({
-    type: 'purchase',
-    newsId: state.news[state.gameIndex].id,
-    newsTitle: state.news[state.gameIndex].title || `뉴스 #${state.gameIndex + 1}`,
-    price,
-  });
+  player.history.push({ type: 'purchase', newsId: getActiveNews()[state.gameIndex]?.id, price });
   state.roundResults[state.gameIndex] = { purchase: { playerId, price } };
   state.auction.status = 'awarded';
   state.auction.winner = playerId;
@@ -737,22 +890,48 @@ function applyAllResults() {
   if (state.resultsApplied) return;
   state.resultsApplied = true;
 
+  const activeNews = getActiveNews();
+
+  // 플레이어별 정답 카운트 추적
+  const correctCount = {};
+  state.players.forEach(p => { correctCount[p.id] = 0; });
+
   state.roundResults.forEach((result, idx) => {
-    const n = state.news[idx];
+    const n = activeNews[idx];
     if (!n) return;
 
     if (state.mode === 'auction') {
       if (!result?.purchase) return;
       const { playerId, price } = result.purchase;
       const p = state.players.find(x => x.id === playerId);
-      if (p && n.answer === 'real') p.balance += price * 2;  // 2× return
+      if (!p) return;
+      if (n.answer === 'real') {
+        p.balance += price * 2;   // 2× 수익 (이미 차감된 price 포함 환급)
+        correctCount[playerId]++;
+      }
+      // 가짜 구매: 이미 balance에서 차감됨 → 추가 처리 없음
 
     } else {
       (result?.investments || []).forEach(inv => {
         const p = state.players.find(x => x.id === inv.playerId);
-        if (p && inv.side === n.answer) p.balance += inv.amount * 2;  // 2× return
+        if (!p || inv.amount <= 0) return;
+        if (inv.side === n.answer) {
+          p.balance += inv.amount * 2;  // 2× 수익
+          correctCount[p.id]++;
+        }
+        // 오답: 이미 차감됨 → 추가 처리 없음
       });
     }
+  });
+
+  // 정답 개수 보너스 계산 및 지급
+  const bonus = state.correctBonus || 0;
+  state.playerBonuses = {};
+  state.players.forEach(p => {
+    const cnt = correctCount[p.id] || 0;
+    const bonusAmt = cnt * bonus;
+    state.playerBonuses[p.id] = { cnt, bonus: bonusAmt };
+    if (bonusAmt > 0) p.balance += bonusAmt;
   });
 }
 
@@ -762,266 +941,186 @@ function applyAllResults() {
 function handleClick(e) {
   const el = e.target.closest('[data-action]');
   if (!el) return;
-
   const action = el.dataset.action;
   const id     = el.dataset.id ? Number(el.dataset.id) : null;
 
   switch (action) {
-
-    // ── Navigation ──────────────────────────────────────
-    case 'go-home':
-      state.phase = 'home';
-      break;
-    case 'go-admin':
-      state.phase = 'admin';
-      break;
+    case 'go-home':   state.phase = 'home'; break;
+    case 'go-admin':  state.phase = 'admin'; break;
     case 'go-browse':
-      if (!state.news.length || !state.mode) break;
-      state.browseIndex = 0;
-      state.phase = 'browse';
-      break;
+      if (!checkStartable().ok) break;
+      state.browseIndex = 0; state.phase = 'browse'; break;
 
-    // ── Home ────────────────────────────────────────────
     case 'select-mode':
-      state.mode     = el.dataset.mode;
-      state.adminTab = 'news';
-      state.phase    = 'admin';
-      break;
+      state.mode = el.dataset.mode; state.adminTab = 'bundles'; state.phase = 'admin'; break;
 
-    // ── Admin ────────────────────────────────────────────
-    case 'tab':
-      state.adminTab = el.dataset.tab;
-      break;
+    case 'tab': state.adminTab = el.dataset.tab; break;
+
+    // Players
     case 'add-player':
-      if (state.players.length < 8) {
-        const newId = Date.now();
-        const n     = state.players.length + 1;
-        state.players.push({ id: newId, name: `모둠 ${n}`, balance: state.initialBalance, history: [] });
-      }
+      if (state.players.length < 8)
+        state.players.push({ id: Date.now(), name: `모둠 ${state.players.length + 1}`, balance: state.initialBalance, history: [] });
       break;
     case 'remove-player':
-      if (state.players.length > 1)
-        state.players = state.players.filter(p => p.id !== id);
+      if (state.players.length > 1) state.players = state.players.filter(p => p.id !== id);
       break;
     case 'reset-balances':
-      state.players.forEach(p => { p.balance = state.initialBalance; });
-      break;
+      state.players.forEach(p => { p.balance = state.initialBalance; }); break;
+
+    // News
     case 'set-answer': {
       const ni = state.news.find(n => n.id === id);
-      if (ni) ni.answer = el.dataset.val;
-      break;
+      if (ni) ni.answer = el.dataset.val; break;
     }
     case 'del-news':
       state.news = state.news.filter(n => n.id !== id);
+      state.bundles.forEach(b => { b.newsIds = b.newsIds.filter(nid => nid !== id); });
       break;
+
+    // Bundles
+    case 'add-bundle':
+      state.bundles.push({ id: Date.now(), name: '새 꾸러미', newsIds: [] });
+      state.expandedBundleId = state.bundles[state.bundles.length - 1].id;
+      break;
+    case 'del-bundle':
+      if (!confirm('이 꾸러미를 삭제하시겠습니까?')) return;
+      state.bundles = state.bundles.filter(b => b.id !== id);
+      if (state.activeBundleId === id)   state.activeBundleId = null;
+      if (state.expandedBundleId === id) state.expandedBundleId = null;
+      break;
+    case 'select-bundle':   state.activeBundleId = id; break;
+    case 'deselect-bundle': state.activeBundleId = null; break;
+    case 'expand-bundle':
+      state.expandedBundleId = state.expandedBundleId === id ? null : id; break;
+    case 'toggle-bundle-news': {
+      const bid = Number(el.dataset.bid);
+      const b   = state.bundles.find(x => x.id === bid);
+      if (!b) break;
+      const idx2 = b.newsIds.indexOf(id);
+      if (idx2 >= 0) b.newsIds.splice(idx2, 1); else b.newsIds.push(id);
+      break;
+    }
+
+    // Admin start/reset
     case 'start-browse': {
-      const allAnswered = state.news.every(n => n.answer);
-      if (!allAnswered) { alert('모든 뉴스의 진위를 설정해 주세요.'); return; }
+      const { ok, reason } = checkStartable();
+      if (!ok) { alert(reason); return; }
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      state.roundResults   = [];
-      state.resultsApplied = false;
-      state.gameIndex      = 0;
-      state.browseIndex    = 0;
-      state.revealIndex    = 0;
-      state.phase = 'browse';
-      break;
+      state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
+      state.gameIndex = 0; state.browseIndex = 0; state.revealIndex = 0;
+      state.phase = 'browse'; break;
     }
     case 'reset-game':
       if (!confirm('게임 결과를 초기화하시겠습니까?')) return;
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      state.roundResults   = [];
-      state.resultsApplied = false;
-      state.gameIndex      = 0;
-      state.phase = 'admin';
-      break;
+      state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
+      state.gameIndex = 0; state.phase = 'admin'; break;
     case 'reset-all':
-      if (!confirm('모든 데이터를 초기화하시겠습니까?\n(뉴스 카드도 삭제됩니다)')) return;
-      state = freshState();
-      break;
+      if (!confirm('모든 데이터를 초기화하시겠습니까?')) return;
+      state = freshState(); break;
 
-    // ── Browse ───────────────────────────────────────────
-    case 'browse-prev':
-      if (state.browseIndex > 0) state.browseIndex--;
-      break;
-    case 'browse-next':
-      if (state.browseIndex < state.news.length - 1) state.browseIndex++;
-      break;
+    // Browse
+    case 'browse-prev': if (state.browseIndex > 0) state.browseIndex--; break;
+    case 'browse-next': {
+      const an = getActiveNews();
+      if (state.browseIndex < an.length - 1) state.browseIndex++; break;
+    }
     case 'begin-game':
-      state.phase     = 'game';
-      state.gameIndex = 0;
-      if (state.mode === 'auction') initAuctionRound();
-      else                          initInvestRound();
-      break;
+      state.phase = 'game'; state.gameIndex = 0;
+      if (state.mode === 'auction') initAuctionRound(); else initInvestRound(); break;
 
-    // ── Auction ──────────────────────────────────────────
+    // Auction
     case 'raise-price':
-      state.auction.price += state.auctionStep;
-      state.auction.activeBidders = [];   // reset on every raise
-      break;
+      state.auction.price += state.auctionStep; state.auction.activeBidders = []; break;
     case 'toggle-bidder': {
       const list = state.auction.activeBidders;
       const idx2 = list.indexOf(id);
-      if (idx2 >= 0) list.splice(idx2, 1);
-      else list.push(id);
-      break;
+      if (idx2 >= 0) list.splice(idx2, 1); else list.push(id); break;
     }
     case 'finalize': {
       const { activeBidders } = state.auction;
       if (!activeBidders.length) break;
-      if (activeBidders.length === 1) {
-        awardTo(activeBidders[0]);
-      } else {
-        state.auction.status = 'selectWinner';
-      }
+      if (activeBidders.length === 1) awardTo(activeBidders[0]);
+      else state.auction.status = 'selectWinner';
       break;
     }
-    case 'award-to':
-      awardTo(id);
-      break;
-    case 'cancel-select':
-      state.auction.status = 'bidding';
-      break;
+    case 'award-to': awardTo(id); break;
+    case 'cancel-select': state.auction.status = 'bidding'; break;
     case 'pass-auction':
       state.roundResults[state.gameIndex] = { purchase: null };
-      state.auction.status = 'passed';
+      state.auction.status = 'passed'; break;
+    case 'auction-next': {
+      const an = getActiveNews();
+      if (state.gameIndex >= an.length - 1) {
+        applyAllResults(); state.phase = 'results'; state.revealIndex = 0;
+      } else { state.gameIndex++; initAuctionRound(); }
       break;
-    case 'auction-next':
-      if (state.gameIndex >= state.news.length - 1) {
-        applyAllResults();
-        state.phase       = 'results';
-        state.revealIndex = 0;
-      } else {
-        state.gameIndex++;
-        initAuctionRound();
-      }
-      break;
+    }
 
-    // ── Investment ───────────────────────────────────────
+    // Investment
     case 'set-side':
       if (!state.investInputs[id]) state.investInputs[id] = {};
-      state.investInputs[id].side = el.dataset.val;
-      break;
+      state.investInputs[id].side = el.dataset.val; break;
     case 'confirm-invest': {
-      const inp    = state.investInputs[id] || {};
+      const inp = state.investInputs[id] || {};
       const amount = Number(inp.amount);
-      const pp     = state.players.find(p => p.id === id);
-      if (!inp.side)              { alert('진짜 또는 가짜를 선택하세요.'); return; }
-      if (amount < 0)             { alert('금액은 0 이상이어야 합니다.'); return; }
-      if (amount > pp.balance)    { alert(`잔액(${won(pp.balance)})을 초과했습니다.`); return; }
-      if (amount > 0) {
-        pp.balance -= amount;
-        pp.history.push({
-          type: 'invest',
-          newsId: state.news[state.gameIndex].id,
-          side: inp.side,
-          amount,
-        });
-      }
-      inp.amount    = amount;
-      inp.confirmed = true;
-      break;
+      const pp = state.players.find(p => p.id === id);
+      if (!inp.side)           { alert('진짜 또는 가짜를 선택하세요.'); return; }
+      if (amount < 0)          { alert('금액은 0 이상이어야 합니다.'); return; }
+      if (amount > pp.balance) { alert(`잔액(${won(pp.balance)})을 초과했습니다.`); return; }
+      if (amount > 0) { pp.balance -= amount; }
+      inp.amount = amount; inp.confirmed = true; break;
     }
-    case 'pass-invest': {
+    case 'pass-invest':
       if (!state.investInputs[id]) state.investInputs[id] = {};
-      Object.assign(state.investInputs[id], { side: 'pass', amount: 0, confirmed: true });
-      break;
-    }
+      Object.assign(state.investInputs[id], { side: 'pass', amount: 0, confirmed: true }); break;
     case 'invest-next': {
-      // Record this round's investments
+      const an = getActiveNews();
       const invs = state.players
-        .filter(p => {
-          const inp = state.investInputs[p.id];
-          return inp?.confirmed && inp.side !== 'pass' && Number(inp.amount) > 0;
-        })
-        .map(p => {
-          const inp = state.investInputs[p.id];
-          return { playerId: p.id, side: inp.side, amount: Number(inp.amount) };
-        });
+        .filter(p => { const inp = state.investInputs[p.id]; return inp?.confirmed && inp.side !== 'pass' && Number(inp.amount) > 0; })
+        .map(p => { const inp = state.investInputs[p.id]; return { playerId: p.id, side: inp.side, amount: Number(inp.amount) }; });
       state.roundResults[state.gameIndex] = { investments: invs };
-
-      if (state.gameIndex >= state.news.length - 1) {
-        applyAllResults();
-        state.phase       = 'results';
-        state.revealIndex = 0;
-      } else {
-        state.gameIndex++;
-        initInvestRound();
-      }
+      if (state.gameIndex >= an.length - 1) {
+        applyAllResults(); state.phase = 'results'; state.revealIndex = 0;
+      } else { state.gameIndex++; initInvestRound(); }
       break;
     }
 
-    // ── Results ──────────────────────────────────────────
-    case 'reveal-next':
-      state.revealIndex++;
-      break;
-    case 'go-home':
-      state.phase = 'home';
-      break;
+    // Results
+    case 'reveal-next': state.revealIndex++; break;
     case 'play-again':
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      state.roundResults   = [];
-      state.resultsApplied = false;
-      state.gameIndex      = 0;
-      state.browseIndex    = 0;
-      state.revealIndex    = 0;
-      state.phase = 'browse';
-      break;
+      state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
+      state.gameIndex = 0; state.browseIndex = 0; state.revealIndex = 0;
+      state.phase = 'browse'; break;
 
-    // ── Image zoom ───────────────────────────────────────
-    case 'zoom':
-      showZoom(el.dataset.src || el.src);
-      return;   // no re-render needed
-
-    default:
-      return;
+    case 'zoom': showZoom(el.dataset.src || el.src); return;
+    default: return;
   }
-
   render();
 }
 
 function handleInput(e) {
-  const el     = e.target;
-  const action = el.dataset.action;
-  const id     = el.dataset.id ? Number(el.dataset.id) : null;
-
+  const el = e.target, action = el.dataset.action;
+  const id = el.dataset.id ? Number(el.dataset.id) : null;
   switch (action) {
-    case 'edit-name': {
-      const p = state.players.find(x => x.id === id);
-      if (p) p.name = el.value;
-      break;
-    }
-    case 'edit-title': {
-      const n = state.news.find(x => x.id === id);
-      if (n) n.title = el.value;
-      break;
-    }
-    case 'set-init-balance':
-      state.initialBalance = Math.max(10000, Number(el.value) || DEF_BALANCE);
-      break;
-    case 'set-auction-start':
-      state.auctionStartPrice = Math.max(0, Number(el.value) || 0);
-      break;
-    case 'set-auction-step':
-      state.auctionStep = Math.max(1000, Number(el.value) || DEF_STEP);
-      break;
-    case 'set-amount':
-      if (!state.investInputs[id]) state.investInputs[id] = {};
-      state.investInputs[id].amount = el.value;
-      break;
+    case 'edit-name': { const p = state.players.find(x => x.id === id); if (p) p.name = el.value; break; }
+    case 'edit-title': { const n = state.news.find(x => x.id === id); if (n) n.title = el.value; break; }
+    case 'edit-bundle-name': { const b = state.bundles.find(x => x.id === id); if (b) b.name = el.value; break; }
+    case 'set-init-balance':   state.initialBalance    = Math.max(10000, Number(el.value) || DEF_BALANCE); break;
+    case 'set-auction-start':  state.auctionStartPrice = Math.max(0, Number(el.value) || 0); break;
+    case 'set-auction-step':   state.auctionStep       = Math.max(1000, Number(el.value) || DEF_STEP); break;
+    case 'set-correct-bonus':  state.correctBonus      = Math.max(0, Number(el.value) || 0); break;
+    case 'set-amount': if (!state.investInputs[id]) state.investInputs[id] = {}; state.investInputs[id].amount = el.value; break;
   }
-  save();   // persist without re-render (avoids focus loss)
+  save();
 }
 
 async function handleChange(e) {
   try {
     const el = e.target;
-    if (el.dataset.action === 'upload-news' && el.files?.length) {
-      await uploadNews(el.files);
-    }
-  } catch (err) {
-    console.error('Upload error:', err);
-    alert('이미지 업로드 중 오류가 발생했습니다.');
-  }
+    if (el.dataset.action === 'upload-news' && el.files?.length) await uploadNews(el.files);
+  } catch (err) { console.error('Upload error:', err); alert('이미지 업로드 중 오류가 발생했습니다.'); }
 }
 
 // ================================================================
@@ -1039,7 +1138,7 @@ async function uploadNews(files) {
 function fileToB64(file) {
   return new Promise((res, rej) => {
     const r = new FileReader();
-    r.onload  = e => res(e.target.result);
+    r.onload = e => res(e.target.result);
     r.onerror = rej;
     r.readAsDataURL(file);
   });
@@ -1050,19 +1149,12 @@ function fileToB64(file) {
 // ================================================================
 function showZoom(src) {
   document.getElementById('zoom-modal')?.remove();
-
   const modal = document.createElement('div');
-  modal.id        = 'zoom-modal';
-  modal.className = 'zoom-modal';
-  modal.innerHTML = `
-    <img src="${src}" class="zoom-img" alt="">
-    <button class="zoom-close" title="닫기">✕</button>`;
+  modal.id = 'zoom-modal'; modal.className = 'zoom-modal';
+  modal.innerHTML = `<img src="${src}" class="zoom-img" alt=""><button class="zoom-close" title="닫기">✕</button>`;
   document.body.appendChild(modal);
-
   modal.addEventListener('click', e => {
-    if (e.target === modal || e.target.classList.contains('zoom-close')) {
-      modal.remove();
-    }
+    if (e.target === modal || e.target.classList.contains('zoom-close')) modal.remove();
   });
 }
 
