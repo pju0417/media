@@ -124,7 +124,7 @@ function save() {
       phase: 'home',
       gameIndex: 0, browseIndex: 0,
       roundResults: [], resultsApplied: false, playerBonuses: {},
-      shuffledNewsIds: [], revealIndex: 0,
+      revealIndex: 0,
       revealAnswerShown: false, playerRevealIndex: -1,
       auction: { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null },
       investInputs: {},
@@ -167,31 +167,43 @@ function colorById(id) {
   return color(state.players.findIndex(p => p.id === id));
 }
 
+// 게임 진행 중 섞인 뉴스 목록 (state/localStorage 외부에 캐싱 → save()에 영향받지 않음)
+let _gameNewsCache = null;
+
 function getActiveNews() {
-  let pool;
-  if (!state.activeBundleId) {
-    pool = state.news;
-  } else {
+  // 게임 중 캐시된 셔플 순서 우선
+  if (_gameNewsCache && _gameNewsCache.length > 0) return _gameNewsCache;
+  // 아니면 꾸러미 또는 전체 뉴스
+  if (state.activeBundleId) {
     const bundle = state.bundles.find(b => b.id === state.activeBundleId);
-    pool = bundle
-      ? bundle.newsIds.map(nid => state.news.find(n => n.id === nid)).filter(Boolean)
-      : state.news;
+    if (bundle) return bundle.newsIds.map(id => state.news.find(n => n.id === id)).filter(Boolean);
   }
-  // 게임 중 셔플 순서 적용
-  if (state.shuffledNewsIds?.length) {
-    return state.shuffledNewsIds.map(sid => pool.find(n => n.id === sid)).filter(Boolean);
-  }
-  return pool;
+  return state.news.slice();
 }
 
-// Fisher-Yates 셔플
-function shuffle(arr) {
-  const a = [...arr];
+// 게임 뉴스를 섞어 캐시에 저장
+function buildGameNews() {
+  let ids;
+  if (state.activeBundleId) {
+    const bundle = state.bundles.find(b => b.id === state.activeBundleId);
+    ids = bundle
+      ? bundle.newsIds.filter(id => state.news.some(n => n.id === id))
+      : state.news.map(n => n.id);
+  } else {
+    ids = state.news.map(n => n.id);
+  }
+  // Fisher-Yates 셔플 (in-place)
+  const a = [...ids];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
-  return a;
+  // 섞인 순서로 뉴스 객체 배열 생성
+  _gameNewsCache = a.map(id => state.news.find(n => n.id === id)).filter(Boolean);
+}
+
+function clearGameNews() {
+  _gameNewsCache = null;
 }
 
 function checkStartable() {
@@ -1130,11 +1142,10 @@ function handleClick(e) {
 
   switch (action) {
     case 'go-home':
-      // 홈으로 갈 때 게임 진행 상태 초기화
+      clearGameNews();
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-      state.shuffledNewsIds = []; state.revealIndex = 0;
-      state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
       state.phase = 'home';
       break;
@@ -1198,14 +1209,16 @@ function handleClick(e) {
       const { ok, reason } = checkStartable();
       if (!ok) { alert(reason); return; }
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
+      clearGameNews();
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-      state.shuffledNewsIds = []; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
       state.phase = 'browse'; break;
     }
     case 'reset-game':
       if (!confirm('게임 결과를 초기화하시겠습니까?')) return;
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
+      clearGameNews();
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
       state.gameIndex = 0; state.phase = 'admin'; break;
     case 'reset-all':
@@ -1219,16 +1232,7 @@ function handleClick(e) {
       if (state.browseIndex < an.length - 1) state.browseIndex++; break;
     }
     case 'begin-game': {
-      // 게임 시작 시 뉴스 순서 셔플 (bundle.newsIds 직접 참조 → 진짜/가짜 완전 혼합)
-      let _baseIds;
-      if (state.activeBundleId) {
-        const _b = state.bundles.find(b => b.id === state.activeBundleId);
-        _baseIds = _b ? [..._b.newsIds] : state.news.map(n => n.id);
-      } else {
-        _baseIds = state.news.map(n => n.id);
-      }
-      // 실제 로드된 뉴스만 필터
-      state.shuffledNewsIds = shuffle(_baseIds.filter(sid => state.news.find(n => n.id === sid)));
+      buildGameNews();  // 진짜/가짜 완전 셔플 → _gameNewsCache에 저장
       state.phase = 'game';
       state.gameIndex = 0;
       state.revealIndex = 0;
@@ -1318,8 +1322,9 @@ function handleClick(e) {
     }
     case 'play-again':
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
+      clearGameNews();
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-      state.shuffledNewsIds = []; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
       state.phase = 'browse'; break;
 
