@@ -993,3 +993,125 @@ body::before {
 .st-bonus-line {
   font-size: 11px; color: var(--gold); font-weight: 600;
 }
+
+/* =====================================================
+   RESULTS — 정답 확인 전 대기 화면
+   ===================================================== */
+.reveal-card-wait { cursor: default; }
+
+.reveal-wait-overlay {
+  position: absolute; inset: 0;
+  background: rgba(12,12,16,.82);
+  display: flex; align-items: center; justify-content: center;
+}
+.rwait-text {
+  font-family: 'Black Han Sans', sans-serif;
+  font-size: 28px; color: var(--gold);
+  text-shadow: 0 0 30px rgba(240,192,64,.5);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+
+.reveal-news-title {
+  font-size: 15px; color: var(--text-dim);
+  text-align: center; max-width: 680px;
+  font-family: 'Noto Serif KR', serif;
+}
+
+.reveal-check-btn {
+  font-size: 20px; padding: 18px 48px;
+  letter-spacing: .04em;
+  box-shadow: 0 0 30px rgba(240,192,64,.3);
+  animation: fadeUp .4s ease;
+}
+
+/* =====================================================
+   RESULTS — 플레이어별 결과 (2단계)
+   ===================================================== */
+.pr-screen {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 20px;
+  width: 100%; max-width: 720px; padding: 20px;
+  animation: fadeUp .4s ease;
+}
+
+.pr-player-badge {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 16px 40px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  border: 2px solid var(--c);
+  border-radius: 16px;
+  box-shadow: 0 0 30px color-mix(in srgb, var(--c) 20%, transparent);
+  width: 100%;
+}
+.pr-num  { font-size: 11px; color: var(--text-dim); letter-spacing: .1em; }
+.pr-name {
+  font-family: 'Black Han Sans', sans-serif;
+  font-size: 32px; color: var(--c);
+}
+
+/* 뉴스별 행동 목록 */
+.pr-breakdown {
+  width: 100%; display: flex; flex-direction: column; gap: 6px;
+}
+.pr-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card);
+  gap: 12px;
+}
+.pr-row.pr-win  { border-color: var(--green); background: rgba(76,206,122,.08); }
+.pr-row.pr-lose { border-color: var(--red);   background: rgba(240,82,82,.08); }
+.pr-row.pr-pass { opacity: .5; }
+
+.pr-row-left {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+}
+.pr-news-num {
+  font-size: 11px; font-weight: 700; color: var(--gold);
+  background: rgba(240,192,64,.1); border: 1px solid rgba(240,192,64,.2);
+  padding: 2px 7px; border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+}
+.pr-news-title {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.pr-row-right {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.pr-action        { font-size: 12px; color: var(--text-dim); }
+.pr-result-icon   { font-size: 18px; }
+
+/* 요약 */
+.pr-summary {
+  width: 100%; display: flex; flex-direction: column; gap: 10px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 20px;
+}
+.pr-sum-row {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 14px; flex-wrap: wrap;
+}
+.pr-sum-label { color: var(--text-dim); }
+.pr-sum-val   { font-size: 18px; font-weight: 900; }
+.pr-correct   { color: var(--green); }
+.pr-wrong     { color: var(--red); }
+
+.pr-bonus-row {
+  font-size: 14px; color: var(--text-dim);
+  background: rgba(240,192,64,.06);
+  border: 1px solid rgba(240,192,64,.2);
+  border-radius: 8px; padding: 8px 12px;
+}
+.pr-bonus-row strong { color: var(--gold); font-size: 16px; }
+
+.pr-balance-row {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 14px; border-top: 1px solid var(--border); padding-top: 10px;
+}
+.pr-balance { font-size: 20px; font-weight: 900; color: var(--gold); flex: 1; text-align: right; }
+.pr-diff    { font-size: 13px; font-weight: 700; }

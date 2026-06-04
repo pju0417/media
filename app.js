@@ -46,7 +46,10 @@ function freshState() {
     },
     investInputs: {},
     roundResults: [],
+    shuffledNewsIds: [],    // 게임 시작 시 섞인 뉴스 순서
     revealIndex: 0,
+    revealAnswerShown: false, // 정답 확인 클릭 전/후
+    playerRevealIndex: -1,  // -1=뉴스공개중, 0~=플레이어별 결과, players.length=최종
     resultsApplied: false,
   };
 }
@@ -70,6 +73,9 @@ let state;
       if (!state.playerBonuses)          state.playerBonuses = {};
       if (!state.news)                   state.news = [];
       state.news.forEach(n => { delete n.weight; });
+      if (!state.shuffledNewsIds)        state.shuffledNewsIds = [];
+      if (state.revealAnswerShown == null) state.revealAnswerShown = false;
+      if (state.playerRevealIndex == null) state.playerRevealIndex = -1;
       if (!state.players?.length) state = freshState();
     }
   } catch {
@@ -142,12 +148,30 @@ function colorById(id) {
 }
 
 function getActiveNews() {
-  if (!state.activeBundleId) return state.news;
-  const bundle = state.bundles.find(b => b.id === state.activeBundleId);
-  if (!bundle) return state.news;
-  return bundle.newsIds
-    .map(nid => state.news.find(n => n.id === nid))
-    .filter(Boolean);
+  let pool;
+  if (!state.activeBundleId) {
+    pool = state.news;
+  } else {
+    const bundle = state.bundles.find(b => b.id === state.activeBundleId);
+    pool = bundle
+      ? bundle.newsIds.map(nid => state.news.find(n => n.id === nid)).filter(Boolean)
+      : state.news;
+  }
+  // 게임 중 셔플 순서 적용
+  if (state.shuffledNewsIds?.length) {
+    return state.shuffledNewsIds.map(sid => pool.find(n => n.id === sid)).filter(Boolean);
+  }
+  return pool;
+}
+
+// Fisher-Yates 셔플
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 function checkStartable() {
@@ -772,19 +796,40 @@ function viewInvestment() {
 }
 
 // ================================================================
-// VIEW: RESULTS
+// VIEW: RESULTS  (3단계: 뉴스공개 → 플레이어별 결과 → 최종)
 // ================================================================
 function viewResults() {
-  const { revealIndex, players, initialBalance, playerBonuses, correctBonus } = state;
+  const { revealIndex, revealAnswerShown, playerRevealIndex, players } = state;
   const activeNews = getActiveNews();
 
-  // ── 뉴스별 결과 공개 ──
-  if (revealIndex < activeNews.length) {
+  // ── 1단계: 뉴스별 정답 공개 ──
+  if (playerRevealIndex < 0) {
     const n      = activeNews[revealIndex];
     const isReal = n.answer === 'real';
     const result = state.roundResults[revealIndex];
-    const isLast = revealIndex >= activeNews.length - 1;
 
+    // 정답 확인 버튼 누르기 전: 이미지만 보여줌
+    if (!revealAnswerShown) {
+      return `
+<div class="results">
+  <div class="reveal-hdr">
+    <h2>🔍 결과 공개</h2>
+    <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
+  </div>
+  <div class="reveal-card reveal-card-wait">
+    <img src="${n.imageData}" class="reveal-img" alt="">
+    <div class="reveal-wait-overlay">
+      <div class="rwait-text">진짜일까요? 가짜일까요?</div>
+    </div>
+  </div>
+  ${n.title ? `<div class="reveal-news-title">${esc(n.title)}</div>` : ''}
+  <button class="btn btn-gold btn-lg reveal-check-btn" data-action="show-answer">
+    🔍 정답 확인
+  </button>
+</div>`;
+    }
+
+    // 정답 공개 후: 정답 + 라운드 결과 표시
     let rows = '';
     if (state.mode === 'auction') {
       if (result?.purchase) {
@@ -818,6 +863,7 @@ function viewResults() {
           }).join('');
     }
 
+    const isLast = revealIndex >= activeNews.length - 1;
     return `
 <div class="results">
   <div class="reveal-hdr">
@@ -833,53 +879,126 @@ function viewResults() {
   </div>
   <div class="result-rows">${rows}</div>
   <button class="btn btn-primary btn-lg" data-action="reveal-next">
-    ${isLast ? '🏆 보너스 & 최종 순위 보기' : '다음 공개 →'}
+    ${isLast ? '📊 플레이어별 결과 보기 →' : '다음 뉴스 →'}
   </button>
 </div>`;
   }
 
-  // ── 보너스 & 최종 순위 ──
+  // ── 2단계: 플레이어별 상세 결과 ──
+  if (playerRevealIndex < players.length) {
+    return viewPlayerResult(playerRevealIndex);
+  }
+
+  // ── 3단계: 최종 순위 ──
+  return viewFinalSummary();
+}
+
+// 플레이어 한 명의 상세 결과
+function viewPlayerResult(pidx) {
+  const player    = state.players[pidx];
+  const activeNews = getActiveNews();
+  const pb        = state.playerBonuses[player.id] || { cnt: 0, bonus: 0 };
+  const initial   = state.initialBalance;
+  const diff      = player.balance - initial;
+  const pi        = pidx;
+  const isLast    = pidx >= state.players.length - 1;
+
+  // 뉴스별 행동 정리
+  const breakdown = activeNews.map((n, idx) => {
+    const result = state.roundResults[idx];
+    if (state.mode === 'auction') {
+      if (result?.purchase?.playerId === player.id) {
+        const win = n.answer === 'real';
+        return { n, idx, label: `${won(result.purchase.price)} 구매`, win, participated: true };
+      }
+    } else {
+      const inv = result?.investments?.find(i => i.playerId === player.id);
+      if (inv && Number(inv.amount) > 0) {
+        const win = inv.side === n.answer;
+        return { n, idx, label: `${inv.side === 'real' ? '진짜' : '가짜'} ${won(inv.amount)} 투자`, win, participated: true };
+      }
+    }
+    return { n, idx, label: '패스', win: null, participated: false };
+  });
+
+  const correctCnt = breakdown.filter(b => b.win === true).length;
+  const wrongCnt   = breakdown.filter(b => b.win === false).length;
+
+  return `
+<div class="results">
+  <div class="pr-screen">
+    <div class="pr-player-badge" style="--c:${color(pi)}">
+      <span class="pr-num">${pidx + 1} / ${state.players.length}</span>
+      <span class="pr-name">${esc(player.name)}</span>
+    </div>
+
+    <div class="pr-breakdown">
+      ${breakdown.map(b => `
+      <div class="pr-row ${b.win === true ? 'pr-win' : b.win === false ? 'pr-lose' : 'pr-pass'}">
+        <div class="pr-row-left">
+          <span class="pr-news-num">#${b.idx + 1}</span>
+          <span class="pr-news-title">${esc(b.n.title || `뉴스 ${b.idx + 1}`)}</span>
+        </div>
+        <div class="pr-row-right">
+          <span class="pr-action">${b.label}</span>
+          <span class="pr-result-icon">
+            ${b.win === true ? '✅' : b.win === false ? '❌' : '—'}
+          </span>
+        </div>
+      </div>`).join('')}
+    </div>
+
+    <div class="pr-summary">
+      <div class="pr-sum-row">
+        <span class="pr-sum-label">✅ 정답</span>
+        <span class="pr-sum-val pr-correct">${correctCnt}개</span>
+        <span class="pr-sum-label">❌ 오답</span>
+        <span class="pr-sum-val pr-wrong">${wrongCnt}개</span>
+      </div>
+      ${pb.bonus > 0 ? `
+      <div class="pr-bonus-row">
+        🎯 정답 보너스 ${pb.cnt}개 × ${won(state.correctBonus)} =
+        <strong>+${won(pb.bonus)}</strong>
+      </div>` : ''}
+      <div class="pr-balance-row">
+        <span>최종 잔액</span>
+        <span class="pr-balance">${won(player.balance)}</span>
+        <span class="pr-diff ${diff >= 0 ? 'diff-pos' : 'diff-neg'}">
+          (${diff >= 0 ? '+' : ''}${won(diff)})
+        </span>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg" data-action="player-next">
+      ${isLast ? '🏆 최종 순위 보기' : `다음 — ${esc(state.players[pidx + 1]?.name)} →`}
+    </button>
+  </div>
+</div>`;
+}
+
+// 최종 순위 화면
+function viewFinalSummary() {
+  const { players, initialBalance, playerBonuses, correctBonus } = state;
   const sorted = [...players]
     .map((p, i) => ({ ...p, origIdx: i }))
     .sort((a, b) => b.balance - a.balance);
 
-  const hasBonus = correctBonus > 0 && Object.keys(playerBonuses).length > 0;
-
   return `
 <div class="results">
-  ${hasBonus ? `
-  <div class="bonus-announce">
-    <div class="ba-title">🎯 정답 보너스 지급!</div>
-    <div class="ba-subtitle">정답 1개당 ${won(correctBonus)} 추가</div>
-    <div class="ba-rows">
-      ${players.map((p, i) => {
-        const pb = playerBonuses[p.id];
-        if (!pb || pb.cnt === 0) return '';
-        return `
-        <div class="ba-row">
-          <span style="color:${color(i)};font-weight:700">${esc(p.name)}</span>
-          <span class="ba-cnt">정답 ${pb.cnt}개</span>
-          <span class="ba-bonus">× ${won(correctBonus)} = <strong>+${won(pb.bonus)}</strong></span>
-        </div>`;
-      }).filter(Boolean).join('')}
-    </div>
-  </div>` : ''}
-
   <div class="reveal-hdr">
     <h2>🏆 최종 결과</h2>
   </div>
-
   <div class="standings">
     ${sorted.map((p, rank) => {
-      const diff    = p.balance - initialBalance;
-      const medal   = ['🥇', '🥈', '🥉'][rank] ?? `${rank + 1}위`;
-      const pb      = playerBonuses[p.id];
+      const diff  = p.balance - initialBalance;
+      const medal = ['🥇', '🥈', '🥉'][rank] ?? `${rank + 1}위`;
+      const pb    = playerBonuses[p.id];
       return `
     <div class="standing-row ${rank === 0 ? 'st-first' : ''}">
       <div class="st-medal">${medal}</div>
       <div class="st-main">
         <div class="st-name" style="color:${color(p.origIdx)}">${esc(p.name)}</div>
-        ${pb?.cnt > 0 ? `<div class="st-bonus-line">🎯 정답 ${pb.cnt}개 보너스 +${won(pb.bonus)}</div>` : ''}
+        ${pb?.cnt > 0 ? `<div class="st-bonus-line">🎯 정답 ${pb.cnt}개 +${won(pb.bonus)}</div>` : ''}
       </div>
       <div class="st-right">
         <div class="st-bal">${won(p.balance)}</div>
@@ -890,7 +1009,6 @@ function viewResults() {
     </div>`;
     }).join('')}
   </div>
-
   <div class="final-btns">
     <button class="btn btn-outline btn-lg" data-action="go-home">🏠 홈으로</button>
     <button class="btn btn-primary btn-lg" data-action="play-again">🔄 다시 하기</button>
@@ -1044,7 +1162,8 @@ function handleClick(e) {
       if (!ok) { alert(reason); return; }
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-      state.gameIndex = 0; state.browseIndex = 0; state.revealIndex = 0;
+      state.shuffledNewsIds = []; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.gameIndex = 0; state.browseIndex = 0;
       state.phase = 'browse'; break;
     }
     case 'reset-game':
@@ -1062,9 +1181,18 @@ function handleClick(e) {
       const an = getActiveNews();
       if (state.browseIndex < an.length - 1) state.browseIndex++; break;
     }
-    case 'begin-game':
-      state.phase = 'game'; state.gameIndex = 0;
-      if (state.mode === 'auction') initAuctionRound(); else initInvestRound(); break;
+    case 'begin-game': {
+      // 게임 시작 시 뉴스 순서 셔플
+      const newsPool = getActiveNews();
+      state.shuffledNewsIds = shuffle(newsPool.map(n => n.id));
+      state.phase = 'game';
+      state.gameIndex = 0;
+      state.revealIndex = 0;
+      state.revealAnswerShown = false;
+      state.playerRevealIndex = -1;
+      if (state.mode === 'auction') initAuctionRound(); else initInvestRound();
+      break;
+    }
 
     // Auction
     case 'raise-price':
@@ -1089,7 +1217,7 @@ function handleClick(e) {
     case 'auction-next': {
       const an = getActiveNews();
       if (state.gameIndex >= an.length - 1) {
-        applyAllResults(); state.phase = 'results'; state.revealIndex = 0;
+        applyAllResults(); state.phase = 'results'; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       } else { state.gameIndex++; initAuctionRound(); }
       break;
     }
@@ -1118,17 +1246,37 @@ function handleClick(e) {
         .map(p => { const inp = state.investInputs[p.id]; return { playerId: p.id, side: inp.side, amount: Number(inp.amount) }; });
       state.roundResults[state.gameIndex] = { investments: invs };
       if (state.gameIndex >= an.length - 1) {
-        applyAllResults(); state.phase = 'results'; state.revealIndex = 0;
+        applyAllResults(); state.phase = 'results'; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       } else { state.gameIndex++; initInvestRound(); }
       break;
     }
 
     // Results
-    case 'reveal-next': state.revealIndex++; break;
+    case 'show-answer': state.revealAnswerShown = true; break;
+    case 'reveal-next': {
+      const an = getActiveNews();
+      if (state.revealIndex < an.length - 1) {
+        state.revealIndex++;
+        state.revealAnswerShown = false;
+      } else {
+        // 모든 뉴스 공개 완료 → 플레이어별 결과 시작
+        state.playerRevealIndex = 0;
+      }
+      break;
+    }
+    case 'player-next': {
+      if (state.playerRevealIndex < state.players.length - 1) {
+        state.playerRevealIndex++;
+      } else {
+        state.playerRevealIndex = state.players.length; // 최종 화면
+      }
+      break;
+    }
     case 'play-again':
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-      state.gameIndex = 0; state.browseIndex = 0; state.revealIndex = 0;
+      state.shuffledNewsIds = []; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.gameIndex = 0; state.browseIndex = 0;
       state.phase = 'browse'; break;
 
     case 'zoom': showZoom(el.dataset.src || el.src); return;
