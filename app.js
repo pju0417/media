@@ -534,7 +534,10 @@ function viewBrowse() {
   return `
 <div class="browse">
   <div class="browse-hdr">
-    <button class="btn btn-ghost" data-action="go-admin">← 관리자</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-ghost" data-action="go-home">🏠 홈</button>
+      <button class="btn btn-ghost" data-action="go-admin">← 관리자</button>
+    </div>
     <div class="browse-counter">
       <span class="bc-text">${idx + 1} / ${total}</span>
       ${activeBundle ? `<div style="font-size:11px;color:var(--gold-dim);margin-top:2px">📦 ${esc(activeBundle.name)}</div>` : ''}
@@ -573,6 +576,7 @@ function viewBrowse() {
 function statusBar() {
   return `
 <div class="status-bar">
+  <button class="sp-home-btn" data-action="go-home" title="홈으로">🏠</button>
   ${state.players.map((p, i) => `
   <div class="sp" style="--c:${color(i)}">
     <div class="sp-name">${esc(p.name)}</div>
@@ -813,6 +817,7 @@ function viewResults() {
       return `
 <div class="results">
   <div class="reveal-hdr">
+    <button class="btn btn-ghost btn-sm" data-action="go-home">🏠 홈</button>
     <h2>🔍 결과 공개</h2>
     <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
   </div>
@@ -867,6 +872,7 @@ function viewResults() {
     return `
 <div class="results">
   <div class="reveal-hdr">
+    <button class="btn btn-ghost btn-sm" data-action="go-home">🏠 홈</button>
     <h2>🔍 결과 공개</h2>
     <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
   </div>
@@ -927,6 +933,7 @@ function viewPlayerResult(pidx) {
   return `
 <div class="results">
   <div class="pr-screen">
+    <div class="pr-top-nav"><button class="btn btn-ghost btn-sm" data-action="go-home">🏠 홈</button></div>
     <div class="pr-player-badge" style="--c:${color(pi)}">
       <span class="pr-num">${pidx + 1} / ${state.players.length}</span>
       <span class="pr-name">${esc(player.name)}</span>
@@ -986,7 +993,9 @@ function viewFinalSummary() {
   return `
 <div class="results">
   <div class="reveal-hdr">
+    <button class="btn btn-ghost btn-sm" data-action="go-home">🏠 홈</button>
     <h2>🏆 최종 결과</h2>
+    <div></div>
   </div>
   <div class="standings">
     ${sorted.map((p, rank) => {
@@ -1100,7 +1109,15 @@ function handleClick(e) {
   const id     = el.dataset.id ? Number(el.dataset.id) : null;
 
   switch (action) {
-    case 'go-home':   state.phase = 'home'; break;
+    case 'go-home':
+      // 홈으로 갈 때 게임 진행 상태 초기화
+      state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
+      state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
+      state.shuffledNewsIds = []; state.revealIndex = 0;
+      state.revealAnswerShown = false; state.playerRevealIndex = -1;
+      state.gameIndex = 0; state.browseIndex = 0;
+      state.phase = 'home';
+      break;
     case 'go-admin':  state.phase = 'admin'; break;
     case 'go-browse':
       if (!checkStartable().ok) break;
@@ -1182,9 +1199,16 @@ function handleClick(e) {
       if (state.browseIndex < an.length - 1) state.browseIndex++; break;
     }
     case 'begin-game': {
-      // 게임 시작 시 뉴스 순서 셔플
-      const newsPool = getActiveNews();
-      state.shuffledNewsIds = shuffle(newsPool.map(n => n.id));
+      // 게임 시작 시 뉴스 순서 셔플 (bundle.newsIds 직접 참조 → 진짜/가짜 완전 혼합)
+      let _baseIds;
+      if (state.activeBundleId) {
+        const _b = state.bundles.find(b => b.id === state.activeBundleId);
+        _baseIds = _b ? [..._b.newsIds] : state.news.map(n => n.id);
+      } else {
+        _baseIds = state.news.map(n => n.id);
+      }
+      // 실제 로드된 뉴스만 필터
+      state.shuffledNewsIds = shuffle(_baseIds.filter(sid => state.news.find(n => n.id === sid)));
       state.phase = 'game';
       state.gameIndex = 0;
       state.revealIndex = 0;
