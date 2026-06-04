@@ -118,9 +118,20 @@ let state;
 
 function save() {
   try {
-    // 내장 뉴스의 imageData는 localStorage에 저장하지 않음 (용량 절약)
+    // phase·게임 진행 상태는 저장하지 않음 → 새로고침 시 항상 홈+초기화 상태로 시작
     const toSave = {
       ...state,
+      phase: 'home',
+      gameIndex: 0, browseIndex: 0,
+      roundResults: [], resultsApplied: false, playerBonuses: {},
+      shuffledNewsIds: [], revealIndex: 0,
+      revealAnswerShown: false, playerRevealIndex: -1,
+      auction: { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null },
+      investInputs: {},
+      players: state.players.map(p => ({
+        ...p, balance: state.initialBalance, history: []
+      })),
+      // 내장 뉴스 imageData는 저장하지 않음 (용량 절약)
       news: state.news.map(n =>
         n.builtin ? { id: n.id, title: n.title, answer: n.answer, builtin: true } : n
       ),
