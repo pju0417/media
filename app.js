@@ -82,6 +82,15 @@ let state;
     state = freshState();
   }
 
+  // ── 새로고침·재방문 시 항상 홈 화면에서 시작 ─────────────
+  state.phase = 'home';
+  state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
+  state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
+  state.shuffledNewsIds = []; state.revealIndex = 0;
+  state.revealAnswerShown = false; state.playerRevealIndex = -1;
+  state.gameIndex = 0; state.browseIndex = 0;
+  state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
+
   // ── 기본 내장 뉴스 팩 주입 ──────────────────────────────
   // default-news.js 가 window.FND_BUILTIN 을 정의한 경우에만 실행
   if (window.FND_BUILTIN) {
