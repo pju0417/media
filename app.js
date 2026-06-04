@@ -1209,7 +1209,7 @@ function handleClick(e) {
       const { ok, reason } = checkStartable();
       if (!ok) { alert(reason); return; }
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      clearGameNews();
+      buildGameNews();  // 게임 시작 시 즉시 셔플 (탐색 단계부터 섞인 순서)
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
       state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
@@ -1232,7 +1232,9 @@ function handleClick(e) {
       if (state.browseIndex < an.length - 1) state.browseIndex++; break;
     }
     case 'begin-game': {
-      buildGameNews();  // 진짜/가짜 완전 셔플 → _gameNewsCache에 저장
+      // _gameNewsCache는 start-browse 때 이미 셔플됨
+      // 캐시가 없는 경우(직접 접근 등) 안전망으로 다시 빌드
+      if (!_gameNewsCache || _gameNewsCache.length === 0) buildGameNews();
       state.phase = 'game';
       state.gameIndex = 0;
       state.revealIndex = 0;
@@ -1322,7 +1324,7 @@ function handleClick(e) {
     }
     case 'play-again':
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      clearGameNews();
+      buildGameNews();  // 다시 하기 → 새로운 셔플
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
       state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
