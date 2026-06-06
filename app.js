@@ -1148,6 +1148,7 @@ function handleClick(e) {
     case 'go-admin':  state.phase = 'admin'; break;
     case 'go-browse':
       if (!checkStartable().ok) break;
+      buildGameNews();          // 반드시 여기서 셔플
       state.browseIndex = 0; state.phase = 'browse'; break;
 
     case 'select-mode':
