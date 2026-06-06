@@ -46,7 +46,7 @@ function freshState() {
     },
     investInputs: {},
     roundResults: [],
-    shuffledNewsIds: [],    // 게임 시작 시 섞인 뉴스 순서
+    gameOrder: [],          // 셔플된 뉴스 ID 순서 (게임 내내 유지)
     revealIndex: 0,
     revealAnswerShown: false, // 정답 확인 클릭 전/후
     playerRevealIndex: -1,  // -1=뉴스공개중, 0~=플레이어별 결과, players.length=최종
@@ -73,7 +73,7 @@ let state;
       if (!state.playerBonuses)          state.playerBonuses = {};
       if (!state.news)                   state.news = [];
       state.news.forEach(n => { delete n.weight; });
-      if (!state.shuffledNewsIds)        state.shuffledNewsIds = [];
+      if (!state.gameOrder)              state.gameOrder = [];
       if (state.revealAnswerShown == null) state.revealAnswerShown = false;
       if (state.playerRevealIndex == null) state.playerRevealIndex = -1;
       if (!state.players?.length) state = freshState();
@@ -86,7 +86,7 @@ let state;
   state.phase = 'home';
   state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
   state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-  state.shuffledNewsIds = []; state.revealIndex = 0;
+  state.gameOrder = []; state.revealIndex = 0;
   state.revealAnswerShown = false; state.playerRevealIndex = -1;
   state.gameIndex = 0; state.browseIndex = 0;
   state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
@@ -167,13 +167,11 @@ function colorById(id) {
   return color(state.players.findIndex(p => p.id === id));
 }
 
-// 게임 진행 중 섞인 뉴스 목록 (state/localStorage 외부에 캐싱 → save()에 영향받지 않음)
-let _gameNewsCache = null;
-
+// 셔플 순서는 state.gameOrder에 저장 (save/load와 함께 유지됨)
 function getActiveNews() {
-  // 게임 중 캐시된 셔플 순서 우선
-  if (_gameNewsCache && _gameNewsCache.length > 0) return _gameNewsCache;
-  // 아니면 꾸러미 또는 전체 뉴스
+  if (state.gameOrder && state.gameOrder.length > 0) {
+    return state.gameOrder.map(id => state.news.find(n => n.id === id)).filter(Boolean);
+  }
   if (state.activeBundleId) {
     const bundle = state.bundles.find(b => b.id === state.activeBundleId);
     if (bundle) return bundle.newsIds.map(id => state.news.find(n => n.id === id)).filter(Boolean);
@@ -181,7 +179,7 @@ function getActiveNews() {
   return state.news.slice();
 }
 
-// 게임 뉴스를 섞어 캐시에 저장
+// 뉴스를 섞어 state.gameOrder에 저장
 function buildGameNews() {
   let ids;
   if (state.activeBundleId) {
@@ -192,18 +190,16 @@ function buildGameNews() {
   } else {
     ids = state.news.map(n => n.id);
   }
-  // Fisher-Yates 셔플 (in-place)
   const a = [...ids];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
-  // 섞인 순서로 뉴스 객체 배열 생성
-  _gameNewsCache = a.map(id => state.news.find(n => n.id === id)).filter(Boolean);
+  state.gameOrder = a;   // state에 직접 저장 → render/save에 무관하게 유지
 }
 
 function clearGameNews() {
-  _gameNewsCache = null;
+  state.gameOrder = [];
 }
 
 function checkStartable() {
@@ -1234,7 +1230,7 @@ function handleClick(e) {
     case 'begin-game': {
       // _gameNewsCache는 start-browse 때 이미 셔플됨
       // 캐시가 없는 경우(직접 접근 등) 안전망으로 다시 빌드
-      if (!_gameNewsCache || _gameNewsCache.length === 0) buildGameNews();
+      if (!state.gameOrder || state.gameOrder.length === 0) buildGameNews();
       state.phase = 'game';
       state.gameIndex = 0;
       state.revealIndex = 0;
