@@ -1115,3 +1115,252 @@ body::before {
 }
 .pr-balance { font-size: 20px; font-weight: 900; color: var(--gold); flex: 1; text-align: right; }
 .pr-diff    { font-size: 13px; font-weight: 700; }
+
+/* ── 게임 중 홈 버튼 ───────────────────────────────── */
+.sp-home-btn {
+  background: none; border: none;
+  font-size: 18px; cursor: pointer;
+  padding: 0 10px; opacity: .5;
+  transition: opacity .15s; flex-shrink: 0;
+  align-self: center;
+}
+.sp-home-btn:hover { opacity: 1; }
+
+.pr-top-nav {
+  width: 100%; text-align: left;
+}
+
+/* =====================================================
+   PC 가로 화면 전용 오버라이드
+   ===================================================== */
+
+/* 기존 모바일 붕괴 방지 — 가로 레이아웃 항상 유지 */
+@media (max-width: 768px) {
+  .auction-layout        { grid-template-columns: 1fr 380px !important; }
+  .inv-layout            { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* ─── 홈 화면 가로 최적화 ─────────────────────────── */
+.home {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 24px 40px;
+  gap: 32px;
+}
+
+.home-hero { flex: 0 0 auto; text-align: center; }
+.hero-title { font-size: clamp(36px, 5vw, 64px); }
+.hero-icon  { font-size: 56px; }
+
+.mode-grid   { gap: 16px; }
+.mode-card   { width: 240px; padding: 24px 20px; }
+.mc-icon     { font-size: 36px; margin-bottom: 10px; }
+.mc-title    { font-size: 18px; }
+.mc-desc     { font-size: 12px; margin-bottom: 10px; }
+.mc-rules li { font-size: 11px; }
+
+/* ─── 관리자 패널 가로 최적화 ────────────────────────── */
+.admin-sec { max-width: 100%; }
+.news-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.tab-content { max-height: calc(100vh - 200px); overflow-y: auto; }
+
+/* ─── 탐색(Browse) 가로 레이아웃 ──────────────────────── */
+.browse { height: 100vh; overflow: hidden; }
+
+.browse-landscape {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  height: calc(100vh - 56px);    /* 헤더 높이 제외 */
+  overflow: hidden;
+}
+
+.browse-img-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,.3);
+  overflow: hidden;
+}
+
+.browse-img-land {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius);
+  cursor: zoom-in;
+  transition: transform .2s;
+  box-shadow: var(--shadow);
+}
+.browse-img-land:hover { transform: scale(1.01); }
+
+.browse-info-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 20px;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.bc-dots-side {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-start;
+  margin-top: 0;
+}
+
+.browse-nav-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+.browse-nav-side .btn { width: 100%; justify-content: center; }
+
+.browse-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.browse-tip {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  font-family: 'Noto Serif KR', serif;
+}
+
+/* 기존 .browse-nav, .browse-body 숨김 (가로 레이아웃으로 대체) */
+.browse .browse-body,
+.browse .browse-nav { display: none; }
+
+/* ─── 경매 가로 최적화 ──────────────────────────────── */
+.auction-layout {
+  grid-template-columns: 1fr 400px;
+  height: calc(100vh - 48px - 56px); /* statusBar + gameInfo */
+}
+.au-img { max-height: calc(100vh - 130px); }
+
+/* ─── 투자 가로 최적화 ──────────────────────────────── */
+.inv-layout { height: calc(100vh - 48px - 44px - 64px); }
+.inv-img-col { min-width: 0; }
+.inv-img { max-height: calc(100vh - 250px); object-fit: contain; }
+
+/* ─── 결과 공개 가로 레이아웃 ─────────────────────────── */
+.results {
+  min-height: 100vh;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+}
+
+.reveal-hdr {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  width: 100%;
+  flex-shrink: 0;
+}
+.reveal-hdr h2 { font-size: 20px; }
+
+.reveal-landscape {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  flex: 1;
+  height: calc(100vh - 53px);
+  overflow: hidden;
+  width: 100%;
+}
+
+.reveal-img-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.3);
+  padding: 20px;
+  overflow: hidden;
+}
+.reveal-img-col .reveal-card {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+}
+.reveal-img-col .reveal-img {
+  max-height: calc(100vh - 120px);
+  width: 100%;
+  object-fit: contain;
+}
+
+.reveal-side-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 20px;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.reveal-wait-hint {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  font-family: 'Noto Serif KR', serif;
+  background: rgba(240,192,64,.06);
+  border: 1px solid rgba(240,192,64,.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.reveal-news-title {
+  font-size: 15px;
+  color: var(--text-dim);
+  font-family: 'Noto Serif KR', serif;
+  line-height: 1.5;
+}
+
+.reveal-check-btn {
+  font-size: 18px;
+  padding: 16px;
+  width: 100%;
+}
+
+.result-rows { width: 100%; }
+
+/* 기존 결과 공개 중앙정렬 오버라이드 */
+.results .reveal-card { max-width: 100%; }
+
+/* ─── 플레이어 결과 가로 최적화 ──────────────────────── */
+.pr-screen {
+  max-width: 900px;
+  padding: 20px 24px;
+  width: 100%;
+}
+.pr-breakdown { max-height: 45vh; overflow-y: auto; }
+.pr-player-badge { padding: 12px 24px; }
+.pr-name { font-size: 28px; }
+
+/* ─── 최종 순위 가로 최적화 ──────────────────────────── */
+.standings { max-width: 800px; width: 100%; }
+.results .reveal-hdr { max-width: 100%; }
+
+/* ─── 상태바 가로 최적화 ──────────────────────────────── */
+.status-bar { flex-shrink: 0; }
+.sp { min-width: 80px; padding: 6px 10px; }
+.sp-name { font-size: 11px; }
+.sp-bal  { font-size: 10px; }
+
+/* ─── 결과 공개 badge 위치 (가로에서 이미지가 커져서 overlay도 커짐) ─── */
+.reveal-badge {
+  gap: 8px;
+}
+.rb-icon { font-size: 56px; }
+.rb-text { font-size: 28px; }

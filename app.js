@@ -578,22 +578,30 @@ function viewBrowse() {
     <div style="width:80px"></div>
   </div>
 
-  <div class="browse-body">
-    <div class="browse-tag">📰 뉴스 #${idx + 1}</div>
-    ${n.title ? `<h2 class="browse-title">${esc(n.title)}</h2>` : ''}
-    <div class="browse-img-wrap">
-      <img src="${n.imageData}" class="browse-img"
+  <div class="browse-landscape">
+    <!-- 좌: 뉴스 이미지 -->
+    <div class="browse-img-col">
+      <img src="${n.imageData}" class="browse-img-land"
            data-action="zoom" data-src="${n.imageData}" alt="뉴스 ${idx + 1}">
     </div>
-    <p class="browse-tip">💡 이 뉴스가 진짜인지 가짜인지 잘 생각해 보세요!</p>
-  </div>
-
-  <div class="browse-nav">
-    <button class="btn btn-outline btn-lg" data-action="browse-prev"
-            ${idx === 0 ? 'disabled' : ''}>◀ 이전</button>
-    ${idx < total - 1
-      ? `<button class="btn btn-primary btn-lg" data-action="browse-next">다음 ▶</button>`
-      : `<button class="btn btn-gold btn-lg" data-action="begin-game">🎮 게임 시작!</button>`}
+    <!-- 우: 정보 + 탐색 -->
+    <div class="browse-info-col">
+      <div class="browse-tag">📰 뉴스 #${idx + 1}</div>
+      ${n.title ? `<h2 class="browse-title">${esc(n.title)}</h2>` : ''}
+      <div class="bc-dots bc-dots-side">
+        ${activeNews.map((_, i) =>
+          `<span class="dot ${i < idx ? 'seen' : i === idx ? 'cur' : ''}"></span>`
+        ).join('')}
+      </div>
+      <p class="browse-tip">💡 이 뉴스가 진짜인지 가짜인지<br>잘 생각해 보세요!</p>
+      <div class="browse-nav-side">
+        <button class="btn btn-outline btn-lg" data-action="browse-prev"
+                ${idx === 0 ? 'disabled' : ''}>◀ 이전</button>
+        ${idx < total - 1
+          ? `<button class="btn btn-primary btn-lg" data-action="browse-next">다음 ▶</button>`
+          : `<button class="btn btn-gold btn-lg" data-action="begin-game">🎮 게임 시작!</button>`}
+      </div>
+    </div>
   </div>
 </div>`;
 }
@@ -849,16 +857,23 @@ function viewResults() {
     <h2>🔍 결과 공개</h2>
     <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
   </div>
-  <div class="reveal-card reveal-card-wait">
-    <img src="${n.imageData}" class="reveal-img" alt="">
-    <div class="reveal-wait-overlay">
-      <div class="rwait-text">진짜일까요? 가짜일까요?</div>
+  <div class="reveal-landscape">
+    <div class="reveal-img-col">
+      <div class="reveal-card reveal-card-wait">
+        <img src="${n.imageData}" class="reveal-img" alt="">
+        <div class="reveal-wait-overlay">
+          <div class="rwait-text">진짜일까요?<br>가짜일까요?</div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal-side-col">
+      ${n.title ? `<div class="reveal-news-title">${esc(n.title)}</div>` : '<div></div>'}
+      <div class="reveal-wait-hint">모든 플레이어가 판단을 마쳤으면<br>정답을 확인하세요</div>
+      <button class="btn btn-gold btn-lg reveal-check-btn" data-action="show-answer">
+        🔍 정답 확인
+      </button>
     </div>
   </div>
-  ${n.title ? `<div class="reveal-news-title">${esc(n.title)}</div>` : ''}
-  <button class="btn btn-gold btn-lg reveal-check-btn" data-action="show-answer">
-    🔍 정답 확인
-  </button>
 </div>`;
     }
 
@@ -904,17 +919,24 @@ function viewResults() {
     <h2>🔍 결과 공개</h2>
     <span class="reveal-count">${revealIndex + 1} / ${activeNews.length}</span>
   </div>
-  <div class="reveal-card">
-    <img src="${n.imageData}" class="reveal-img" alt="">
-    <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}">
-      <div class="rb-icon">${isReal ? '✅' : '❌'}</div>
-      <div class="rb-text">${isReal ? '진짜 뉴스' : '가짜 뉴스'}</div>
+  <div class="reveal-landscape">
+    <div class="reveal-img-col">
+      <div class="reveal-card">
+        <img src="${n.imageData}" class="reveal-img" alt="">
+        <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}">
+          <div class="rb-icon">${isReal ? '✅' : '❌'}</div>
+          <div class="rb-text">${isReal ? '진짜 뉴스' : '가짜 뉴스'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal-side-col">
+      ${n.title ? `<div class="reveal-news-title">${esc(n.title)}</div>` : ''}
+      <div class="result-rows">${rows}</div>
+      <button class="btn btn-primary btn-lg" data-action="reveal-next">
+        ${isLast ? '📊 플레이어별 결과 보기 →' : '다음 뉴스 →'}
+      </button>
     </div>
   </div>
-  <div class="result-rows">${rows}</div>
-  <button class="btn btn-primary btn-lg" data-action="reveal-next">
-    ${isLast ? '📊 플레이어별 결과 보기 →' : '다음 뉴스 →'}
-  </button>
 </div>`;
   }
 
