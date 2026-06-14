@@ -922,7 +922,8 @@ function viewResults() {
   <div class="reveal-landscape">
     <div class="reveal-img-col">
       <div class="reveal-card">
-        <img src="${n.imageData}" class="reveal-img" alt="">
+        <img src="${n.imageData}" class="reveal-img reveal-img-clickable" alt=""
+             data-action="zoom" data-src="${n.imageData}" title="클릭하면 기사 전체 보기">
         <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}">
           <div class="rb-icon">${isReal ? '✅' : '❌'}</div>
           <div class="rb-text">${isReal ? '진짜 뉴스' : '가짜 뉴스'}</div>
@@ -1047,6 +1048,7 @@ function viewFinalSummary() {
     <h2>🏆 최종 결과</h2>
     <div></div>
   </div>
+  <div class="final-summary-body">
   <div class="standings">
     ${sorted.map((p, rank) => {
       const diff  = p.balance - initialBalance;
@@ -1072,6 +1074,7 @@ function viewFinalSummary() {
     <button class="btn btn-outline btn-lg" data-action="go-home">🏠 홈으로</button>
     <button class="btn btn-primary btn-lg" data-action="play-again">🔄 다시 하기</button>
   </div>
+  </div><!-- /final-summary-body -->
 </div>`;
 }
 
