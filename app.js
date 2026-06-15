@@ -164,17 +164,17 @@ function color(playerOrIndex) {
 }
 
 function colorById(id) {
-  return color(state.players.findIndex(p => p.id === id));
+  return color(state.players.findIndex(p => String(p.id) === String(id)));
 }
 
 // 셔플 순서는 state.gameOrder에 저장 (save/load와 함께 유지됨)
 function getActiveNews() {
   if (state.gameOrder && state.gameOrder.length > 0) {
-    return state.gameOrder.map(id => state.news.find(n => n.id === id)).filter(Boolean);
+    return state.gameOrder.map(id => state.news.find(n => String(n.id) === String(id))).filter(Boolean);
   }
   if (state.activeBundleId) {
     const bundle = state.bundles.find(b => b.id === state.activeBundleId);
-    if (bundle) return bundle.newsIds.map(id => state.news.find(n => n.id === id)).filter(Boolean);
+    if (bundle) return bundle.newsIds.map(id => state.news.find(n => String(n.id) === String(id))).filter(Boolean);
   }
   return state.news.slice();
 }
@@ -986,6 +986,7 @@ function viewPlayerResult(pidx) {
 
   return `
 <div class="results">
+  <div class="final-summary-body">
   <div class="pr-screen">
     <div class="pr-top-nav"><button class="btn btn-ghost btn-sm" data-action="go-home">🏠 홈</button></div>
     <div class="pr-player-badge" style="--c:${color(pi)}">
@@ -1038,6 +1039,7 @@ function viewPlayerResult(pidx) {
       ${isLast ? '🏆 최종 순위 보기' : `다음 — ${esc(state.players[pidx + 1]?.name)} →`}
     </button>
   </div>
+  </div><!-- /final-summary-body -->
 </div>`;
 }
 
@@ -1093,10 +1095,11 @@ function initAuctionRound() {
 }
 
 function initInvestRound() {
-  state.investInputs = {};
+  const inputs = {};
   state.players.forEach(p => {
-    state.investInputs[p.id] = { side: null, amount: '', confirmed: p.balance <= 0 };
+    inputs[String(p.id)] = { side: null, amount: '', confirmed: p.balance <= 0 };
   });
+  state.investInputs = inputs;  // 한 번에 교체
 }
 
 function awardTo(playerId) {
@@ -1166,7 +1169,7 @@ function handleClick(e) {
   const el = e.target.closest('[data-action]');
   if (!el) return;
   const action = el.dataset.action;
-  const id     = el.dataset.id ? Number(el.dataset.id) : null;
+  const id     = el.dataset.id || null;  // String 그대로 사용 (객체 key 일치 보장)
 
   switch (action) {
     case 'go-home':
@@ -1194,18 +1197,18 @@ function handleClick(e) {
         state.players.push({ id: Date.now(), name: `모둠 ${state.players.length + 1}`, balance: state.initialBalance, history: [] });
       break;
     case 'remove-player':
-      if (state.players.length > 1) state.players = state.players.filter(p => p.id !== id);
+      if (state.players.length > 1) state.players = state.players.filter(p => String(p.id) !== String(id));
       break;
     case 'reset-balances':
       state.players.forEach(p => { p.balance = state.initialBalance; }); break;
 
     // News
     case 'set-answer': {
-      const ni = state.news.find(n => n.id === id);
+      const ni = state.news.find(n => String(n.id) === String(id));
       if (ni) ni.answer = el.dataset.val; break;
     }
     case 'del-news':
-      state.news = state.news.filter(n => n.id !== id);
+      state.news = state.news.filter(n => String(n.id) !== String(id));
       state.bundles.forEach(b => { b.newsIds = b.newsIds.filter(nid => nid !== id); });
       break;
 
@@ -1216,7 +1219,7 @@ function handleClick(e) {
       break;
     case 'del-bundle':
       if (!confirm('이 꾸러미를 삭제하시겠습니까?')) return;
-      state.bundles = state.bundles.filter(b => b.id !== id);
+      state.bundles = state.bundles.filter(b => String(b.id) !== String(id));
       if (state.activeBundleId === id)   state.activeBundleId = null;
       if (state.expandedBundleId === id) state.expandedBundleId = null;
       break;
@@ -1225,8 +1228,8 @@ function handleClick(e) {
     case 'expand-bundle':
       state.expandedBundleId = state.expandedBundleId === id ? null : id; break;
     case 'toggle-bundle-news': {
-      const bid = Number(el.dataset.bid);
-      const b   = state.bundles.find(x => x.id === bid);
+      const bid = el.dataset.bid;
+      const b   = state.bundles.find(x => String(x.id) === String(bid));
       if (!b) break;
       const idx2 = b.newsIds.indexOf(id);
       if (idx2 >= 0) b.newsIds.splice(idx2, 1); else b.newsIds.push(id);
@@ -1302,27 +1305,33 @@ function handleClick(e) {
     }
 
     // Investment
-    case 'set-side':
-      if (!state.investInputs[id]) state.investInputs[id] = {};
-      state.investInputs[id].side = el.dataset.val; break;
+    case 'set-side': {
+      const prev = state.investInputs[String(id)] || { side: null, amount: '', confirmed: false };
+      state.investInputs[String(id)] = { ...prev, side: el.dataset.val };
+      break;
+    }
     case 'confirm-invest': {
-      const inp = state.investInputs[id] || {};
-      const amount = Number(inp.amount);
-      const pp = state.players.find(p => p.id === id);
-      if (!inp.side)           { alert('진짜 또는 가짜를 선택하세요.'); return; }
-      if (amount < 0)          { alert('금액은 0 이상이어야 합니다.'); return; }
+      // state.investInputs[String(id)]가 없으면 생성
+      if (!state.investInputs[String(id)]) state.investInputs[String(id)] = { side: null, amount: '', confirmed: false };
+      const cur    = state.investInputs[String(id)];
+      const amount = Number(cur.amount || 0);
+      const pp     = state.players.find(p => String(p.id) === String(id));
+      if (!pp)             return;
+      if (!cur.side)       { alert('진짜 또는 가짜를 선택하세요.'); return; }
+      if (amount < 0)      { alert('금액은 0 이상이어야 합니다.'); return; }
       if (amount > pp.balance) { alert(`잔액(${won(pp.balance)})을 초과했습니다.`); return; }
-      if (amount > 0) { pp.balance -= amount; }
-      inp.amount = amount; inp.confirmed = true; break;
+      if (amount > 0) pp.balance -= amount;
+      // 참조 뮤테이션 대신 state에 직접 새 객체 할당 (확실한 업데이트 보장)
+      state.investInputs[String(id)] = { side: cur.side, amount, confirmed: true };
+      break;
     }
     case 'pass-invest':
-      if (!state.investInputs[id]) state.investInputs[id] = {};
-      Object.assign(state.investInputs[id], { side: 'pass', amount: 0, confirmed: true }); break;
+      state.investInputs[String(id)] = { side: 'pass', amount: 0, confirmed: true }; break;
     case 'invest-next': {
       const an = getActiveNews();
       const invs = state.players
-        .filter(p => { const inp = state.investInputs[p.id]; return inp?.confirmed && inp.side !== 'pass' && Number(inp.amount) > 0; })
-        .map(p => { const inp = state.investInputs[p.id]; return { playerId: p.id, side: inp.side, amount: Number(inp.amount) }; });
+        .filter(p => { const inp = state.investInputs[String(p.id)]; return inp?.confirmed && inp.side !== 'pass' && Number(inp.amount) > 0; })
+        .map(p => { const inp = state.investInputs[String(p.id)]; return { playerId: p.id, side: inp.side, amount: Number(inp.amount) }; });
       state.roundResults[state.gameIndex] = { investments: invs };
       if (state.gameIndex >= an.length - 1) {
         applyAllResults(); state.phase = 'results'; state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
@@ -1367,16 +1376,16 @@ function handleClick(e) {
 
 function handleInput(e) {
   const el = e.target, action = el.dataset.action;
-  const id = el.dataset.id ? Number(el.dataset.id) : null;
+  const id = el.dataset.id || null;  // String 그대로 사용
   switch (action) {
-    case 'edit-name': { const p = state.players.find(x => x.id === id); if (p) p.name = el.value; break; }
-    case 'edit-title': { const n = state.news.find(x => x.id === id); if (n) n.title = el.value; break; }
-    case 'edit-bundle-name': { const b = state.bundles.find(x => x.id === id); if (b) b.name = el.value; break; }
+    case 'edit-name': { const p = state.players.find(x => String(x.id) === String(id)); if (p) p.name = el.value; break; }
+    case 'edit-title': { const n = state.news.find(x => String(x.id) === String(id)); if (n) n.title = el.value; break; }
+    case 'edit-bundle-name': { const b = state.bundles.find(x => String(x.id) === String(id)); if (b) b.name = el.value; break; }
     case 'set-init-balance':   state.initialBalance    = Math.max(10000, Number(el.value) || DEF_BALANCE); break;
     case 'set-auction-start':  state.auctionStartPrice = Math.max(0, Number(el.value) || 0); break;
     case 'set-auction-step':   state.auctionStep       = Math.max(1000, Number(el.value) || DEF_STEP); break;
     case 'set-correct-bonus':  state.correctBonus      = Math.max(0, Number(el.value) || 0); break;
-    case 'set-amount': if (!state.investInputs[id]) state.investInputs[id] = {}; state.investInputs[id].amount = el.value; break;
+    case 'set-amount': if (!state.investInputs[String(id)]) state.investInputs[String(id)] = {}; state.investInputs[String(id)].amount = el.value; break;
   }
   save();
 }
