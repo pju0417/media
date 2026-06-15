@@ -82,64 +82,56 @@ let state;
     state = freshState();
   }
 
-  // ── 새로고침·재방문 시 항상 홈 화면에서 시작 ─────────────
-  state.phase = 'home';
-  state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-  state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
-  state.gameOrder = []; state.revealIndex = 0;
-  state.revealAnswerShown = false; state.playerRevealIndex = -1;
-  state.gameIndex = 0; state.browseIndex = 0;
-  state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
-
-  // ── 기본 내장 뉴스 팩 주입 ──────────────────────────────
-  // default-news.js 가 window.FND_BUILTIN 을 정의한 경우에만 실행
-  if (window.FND_BUILTIN) {
-    const builtin = window.FND_BUILTIN;
-
-    // 1) 뉴스 목록에 내장 뉴스 추가 / imageData 복원
-    //    (localStorage 절약을 위해 imageData는 저장하지 않고 매번 JS에서 주입)
-    builtin.news.forEach(bn => {
-      const existing = state.news.find(n => n.id === bn.id);
-      if (existing) {
-        existing.imageData = bn.imageData;   // 매번 JS에서 이미지 복원
-        existing.builtin   = true;
-      } else {
-        // 목록 맨 앞에 삽입
-        state.news.unshift({ id: bn.id, title: bn.title, imageData: bn.imageData, answer: bn.answer, builtin: true });
+  // ── 기본 내장 뉴스 팩 주입 (default-news.js 없어도 안전) ──
+  try {
+    if (window.FND_BUILTIN && window.FND_BUILTIN.news && window.FND_BUILTIN.bundle) {
+      const builtin = window.FND_BUILTIN;
+      builtin.news.forEach(bn => {
+        const existing = state.news.find(n => String(n.id) === String(bn.id));
+        if (existing) {
+          existing.imageData = bn.imageData;
+          existing.builtin   = true;
+        } else {
+          state.news.unshift({ id: bn.id, title: bn.title, imageData: bn.imageData, answer: bn.answer, builtin: true });
+        }
+      });
+      if (!state.bundles.find(b => String(b.id) === String(builtin.bundle.id))) {
+        state.bundles.unshift({ ...builtin.bundle });
       }
-    });
-
-    // 2) 기본 꾸러미가 없으면 추가
-    if (!state.bundles.find(b => b.id === builtin.bundle.id)) {
-      state.bundles.unshift({ ...builtin.bundle });
     }
-  }
+  } catch(e) { console.warn('FND_BUILTIN 로딩 오류:', e); }
 })();
 
 function save() {
   try {
-    // phase·게임 진행 상태는 저장하지 않음 → 새로고침 시 항상 홈+초기화 상태로 시작
+    // 내장 뉴스 imageData만 제외하고 게임 진행 상태 전체 저장 (이어하기 지원)
     const toSave = {
       ...state,
-      phase: 'home',
-      gameIndex: 0, browseIndex: 0,
-      roundResults: [], resultsApplied: false, playerBonuses: {},
-      revealIndex: 0,
-      revealAnswerShown: false, playerRevealIndex: -1,
-      auction: { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null },
-      investInputs: {},
-      players: state.players.map(p => ({
-        ...p, balance: state.initialBalance, history: []
-      })),
-      // 내장 뉴스 imageData는 저장하지 않음 (용량 절약)
       news: state.news.map(n =>
         n.builtin ? { id: n.id, title: n.title, answer: n.answer, builtin: true } : n
       ),
     };
-    localStorage.setItem('fnd_v1', JSON.stringify(toSave));
+    const json = JSON.stringify(toSave);
+    // 4.5MB 초과 경고
+    if (json.length > 4.5 * 1024 * 1024) {
+      showStorageWarning('저장 용량이 가득 차고 있습니다. 이미지를 줄여주세요.');
+    }
+    localStorage.setItem('fnd_v1', json);
   } catch (e) {
     console.warn('localStorage 저장 실패:', e);
+    showStorageWarning('이미지 용량이 커서 저장에 실패했습니다.\n이미지 개수를 줄이거나 브라우저 저장소를 정리해주세요.');
   }
+}
+
+function showStorageWarning(msg) {
+  const id = 'storage-warn-toast';
+  if (document.getElementById(id)) return;
+  const el = document.createElement('div');
+  el.id = id; el.className = 'storage-warn-toast';
+  el.innerHTML = `⚠️ ${msg.replace(/\n/g,'<br>')}
+    <button onclick="document.getElementById('${id}').remove()">닫기</button>`;
+  document.body.appendChild(el);
+  setTimeout(() => el?.remove(), 10000);
 }
 
 // ================================================================
@@ -173,7 +165,7 @@ function getActiveNews() {
     return state.gameOrder.map(id => state.news.find(n => String(n.id) === String(id))).filter(Boolean);
   }
   if (state.activeBundleId) {
-    const bundle = state.bundles.find(b => b.id === state.activeBundleId);
+    const bundle = state.bundles.find(b => String(b.id) === String(state.activeBundleId));
     if (bundle) return bundle.newsIds.map(id => state.news.find(n => String(n.id) === String(id))).filter(Boolean);
   }
   return state.news.slice();
@@ -183,9 +175,9 @@ function getActiveNews() {
 function buildGameNews() {
   let ids;
   if (state.activeBundleId) {
-    const bundle = state.bundles.find(b => b.id === state.activeBundleId);
+    const bundle = state.bundles.find(b => String(b.id) === String(state.activeBundleId));
     ids = bundle
-      ? bundle.newsIds.filter(id => state.news.some(n => n.id === id))
+      ? bundle.newsIds.filter(id => state.news.some(n => String(n.id) === String(id)))
       : state.news.map(n => n.id);
   } else {
     ids = state.news.map(n => n.id);
@@ -236,7 +228,8 @@ function render() {
 // ================================================================
 function viewHome() {
   const { ok } = checkStartable();
-  const activeBundle = state.bundles.find(b => b.id === state.activeBundleId);
+  const activeBundle = state.bundles.find(b => String(b.id) === String(state.activeBundleId));
+  const gameInProgress = !!(state.gameOrder && state.gameOrder.length > 0);
 
   return `
 <div class="home">
@@ -287,7 +280,14 @@ function viewHome() {
 
   <div class="home-btns">
     <button class="btn btn-outline" data-action="go-admin">⚙️ 관리자 패널</button>
-    ${ok ? `<button class="btn btn-gold btn-lg" data-action="go-browse">▶ 게임 시작</button>` : ''}
+    ${gameInProgress ? `
+      <button class="btn btn-gold btn-lg" data-action="resume-game">▶ 이어하기</button>
+      <button class="btn btn-outline" data-action="start-new-game">🔄 새 게임</button>
+    ` : ok ? `
+      <button class="btn btn-gold btn-lg" data-action="start-new-game">▶ 게임 시작</button>
+    ` : ''}
+    <button class="btn btn-danger btn-sm home-reset-btn" data-action="reset-all-data"
+            title="전체 초기화">🗑️</button>
   </div>
 </div>`;
 }
@@ -424,7 +424,7 @@ function tabBundles() {
 
   <div class="bundle-list">
     ${state.bundles.map(b => {
-      const isActive   = state.activeBundleId === b.id;
+      const isActive   = String(state.activeBundleId) === String(b.id);
       const isExpanded = state.expandedBundleId === b.id;
       const bundleNews = b.newsIds.map(nid => state.news.find(n => n.id === nid)).filter(Boolean);
       const canSelect  = bundleNews.length >= 2 && bundleNews.every(n => n.answer);
@@ -456,7 +456,7 @@ function tabBundles() {
           <div class="bundle-hint">클릭하여 뉴스를 추가/제거하세요</div>
           <div class="bundle-news-grid">
             ${state.news.map((n, ni) => {
-              const included = b.newsIds.includes(n.id);
+              const included = b.newsIds.some(nid => String(nid) === String(n.id));
               return `
             <button class="bng-item ${included ? 'bng-included' : ''}"
                     data-action="toggle-bundle-news" data-id="${n.id}" data-bid="${b.id}">
@@ -635,7 +635,7 @@ function viewAuction() {
     const nextBtn = `<button class="btn btn-primary btn-lg" data-action="auction-next">
                        ${isLast ? '결과 보기 →' : '다음 뉴스 →'}</button>`;
     if (auction.status === 'awarded') {
-      const wp = state.players.find(p => p.id === auction.winner);
+      const wp = state.players.find(p => String(p.id) === String(auction.winner));
       const wi = state.players.indexOf(wp);
       return `
 <div class="auction">
@@ -664,7 +664,7 @@ function viewAuction() {
   }
 
   if (auction.status === 'selectWinner') {
-    const candidates = state.players.filter(p => auction.activeBidders.includes(p.id));
+    const candidates = state.players.filter(p => auction.activeBidders.some(pid => String(pid) === String(p.id)));
     return `
 <div class="auction">
   ${statusBar()}
@@ -717,7 +717,7 @@ function viewAuction() {
           <div class="bidders-title">입찰자 선택 <span class="bidders-hint">(교사 조작)</span></div>
           <div class="bidder-grid">
             ${state.players.map((p, i) => {
-              const active = auction.activeBidders.includes(p.id);
+              const active = auction.activeBidders.some(pid => String(pid) === String(p.id));
               const broke  = p.balance < auction.price;
               return `
             <button class="bidder-btn ${active ? 'bidder-active' : ''} ${broke && !active ? 'bidder-broke' : ''}"
@@ -1104,13 +1104,13 @@ function initInvestRound() {
 
 function awardTo(playerId) {
   const price  = state.auction.price;
-  const player = state.players.find(p => p.id === playerId);
+  const player = state.players.find(p => String(p.id) === String(playerId));
   if (!player || player.balance < price) return;
   player.balance -= price;
   player.history.push({ type: 'purchase', newsId: getActiveNews()[state.gameIndex]?.id, price });
-  state.roundResults[state.gameIndex] = { purchase: { playerId, price } };
+  state.roundResults[state.gameIndex] = { purchase: { playerId: player.id, price } };
   state.auction.status = 'awarded';
-  state.auction.winner = playerId;
+  state.auction.winner = player.id;   // 원본 player.id(숫자) 보존
 }
 
 function applyAllResults() {
@@ -1130,7 +1130,7 @@ function applyAllResults() {
     if (state.mode === 'auction') {
       if (!result?.purchase) return;
       const { playerId, price } = result.purchase;
-      const p = state.players.find(x => x.id === playerId);
+      const p = state.players.find(x => String(x.id) === String(playerId));
       if (!p) return;
       if (n.answer === 'real') {
         p.balance += price * 2;   // 2× 수익 (이미 차감된 price 포함 환급)
@@ -1140,7 +1140,7 @@ function applyAllResults() {
 
     } else {
       (result?.investments || []).forEach(inv => {
-        const p = state.players.find(x => x.id === inv.playerId);
+        const p = state.players.find(x => String(x.id) === String(inv.playerId));
         if (!p || inv.amount <= 0) return;
         if (inv.side === n.answer) {
           p.balance += inv.amount * 2;  // 2× 수익
@@ -1173,12 +1173,34 @@ function handleClick(e) {
 
   switch (action) {
     case 'go-home':
-      clearGameNews();
+      state.phase = 'home';   // 게임 진행 상태 보존 (이어하기 가능)
+      break;
+    case 'resume-game':
+      // 마지막으로 저장된 게임 화면으로 복귀
+      if (state.gameOrder && state.gameOrder.length > 0) {
+        state.phase = state.lastActivePhase || 'game';
+      } else {
+        state.phase = 'browse';
+      }
+      break;
+    case 'start-new-game': {
+      // 게임 결과만 초기화, 뉴스·꾸러미·설정은 유지
+      const { ok, reason } = checkStartable();
+      if (!ok) { alert(reason); return; }
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
       state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
-      state.phase = 'home';
+      state.investInputs = {};
+      state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
+      buildGameNews();
+      state.phase = 'browse';
+      break;
+    }
+    case 'reset-all-data':
+      if (!confirm('모든 데이터(뉴스·꾸러미·게임 기록)를 완전히 초기화하시겠습니까?')) return;
+      localStorage.removeItem('fnd_v1');
+      state = freshState();
       break;
     case 'go-admin':  state.phase = 'admin'; break;
     case 'go-browse':
@@ -1264,6 +1286,7 @@ function handleClick(e) {
       if (state.browseIndex < an.length - 1) state.browseIndex++; break;
     }
     case 'begin-game': {
+      state.lastActivePhase = 'game';  // 이어하기용
       // _gameNewsCache는 start-browse 때 이미 셔플됨
       // 캐시가 없는 경우(직접 접근 등) 안전망으로 다시 빌드
       if (!state.gameOrder || state.gameOrder.length === 0) buildGameNews();
@@ -1281,7 +1304,7 @@ function handleClick(e) {
       state.auction.price += state.auctionStep; state.auction.activeBidders = []; break;
     case 'toggle-bidder': {
       const list = state.auction.activeBidders;
-      const idx2 = list.indexOf(id);
+      const idx2 = list.findIndex(pid => String(pid) === String(id));
       if (idx2 >= 0) list.splice(idx2, 1); else list.push(id); break;
     }
     case 'finalize': {
@@ -1360,13 +1383,16 @@ function handleClick(e) {
       }
       break;
     }
-    case 'play-again':
+    case 'play-again': {
       state.players.forEach(p => { p.balance = state.initialBalance; p.history = []; });
-      buildGameNews();  // 다시 하기 → 새로운 셔플
       state.roundResults = []; state.resultsApplied = false; state.playerBonuses = {};
       state.revealIndex = 0; state.revealAnswerShown = false; state.playerRevealIndex = -1;
       state.gameIndex = 0; state.browseIndex = 0;
+      state.investInputs = {};
+      state.auction = { price: state.auctionStartPrice, activeBidders: [], status: 'bidding', winner: null };
+      buildGameNews();
       state.phase = 'browse'; break;
+    }
 
     case 'zoom': showZoom(el.dataset.src || el.src); return;
     default: return;
@@ -1403,18 +1429,40 @@ async function handleChange(e) {
 async function uploadNews(files) {
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
-    const imageData = await fileToB64(file);
+    const imageData = await compressImage(file);
+    if (!imageData) continue;
     state.news.push({ id: Date.now() + Math.random(), title: '', imageData, answer: null });
   }
   render();
 }
 
-function fileToB64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = e => res(e.target.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
+// 이미지 자동 압축 (최대 900px, JPEG 78%)
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 900;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        const ratio = Math.min(MAX / width, MAX / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.78));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      const r = new FileReader();
+      r.onload = e => resolve(e.target.result);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(file);
+    };
+    img.src = url;
   });
 }
 

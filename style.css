@@ -1464,3 +1464,26 @@ body::before {
 
 /* 행 구분선 */
 .pr-row + .pr-row { border-top: 1px solid var(--border); }
+
+/* ── 저장 실패 토스트 ─────────────────────────────────── */
+.storage-warn-toast {
+  position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+  background: var(--red); color: #fff;
+  padding: 14px 20px; border-radius: 10px;
+  font-size: 13px; line-height: 1.6; z-index: 9999;
+  box-shadow: var(--shadow-lg); max-width: 400px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  animation: fadeUp .3s ease;
+}
+.storage-warn-toast button {
+  background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.4);
+  color: #fff; padding: 4px 16px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-family: inherit;
+}
+
+/* ── 홈 초기화 버튼 ───────────────────────────────────── */
+.home-reset-btn {
+  opacity: .45; transition: opacity .2s;
+  align-self: center;
+}
+.home-reset-btn:hover { opacity: 1; }
