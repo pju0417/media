@@ -1471,13 +1471,127 @@ function compressImage(file) {
 // ================================================================
 function showZoom(src) {
   document.getElementById('zoom-modal')?.remove();
+
   const modal = document.createElement('div');
-  modal.id = 'zoom-modal'; modal.className = 'zoom-modal';
-  modal.innerHTML = `<img src="${src}" class="zoom-img" alt=""><button class="zoom-close" title="닫기">✕</button>`;
+  modal.id = 'zoom-modal';
+  modal.className = 'zoom-modal';
+  modal.innerHTML = `
+    <div class="zm-controls">
+      <button class="zm-btn" id="zm-out" title="축소">&#8722;</button>
+      <span class="zm-pct" id="zm-pct">100%</span>
+      <button class="zm-btn" id="zm-in" title="확대">+</button>
+      <button class="zm-btn zm-fit" id="zm-reset">원본</button>
+      <span class="zm-hint-text">휠: 확대/축소&nbsp;&nbsp;드래그: 이동&nbsp;&nbsp;더블클릭: 2배</span>
+      <button class="zm-btn zm-close-btn" id="zm-close">&#10005;</button>
+    </div>
+    <div class="zm-stage" id="zm-stage">
+      <img src="${src}" class="zm-img" id="zm-img" alt="" draggable="false">
+    </div>
+  `;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => {
-    if (e.target === modal || e.target.classList.contains('zoom-close')) modal.remove();
+
+  const stage = modal.querySelector('#zm-stage');
+  const img   = modal.querySelector('#zm-img');
+  const pct   = modal.querySelector('#zm-pct');
+  let scale = 1, panX = 0, panY = 0;
+  let drag = false, lx = 0, ly = 0, lt = 0;
+  const MIN = 0.5, MAX = 10;
+
+  function apply() {
+    img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+    pct.textContent = Math.round(scale * 100) + '%';
+    stage.style.cursor = scale > 1 ? (drag ? 'grabbing' : 'grab') : 'zoom-in';
+  }
+
+  function clamp() {
+    var sw = stage.clientWidth, sh = stage.clientHeight;
+    var iw = img.naturalWidth * scale, ih = img.naturalHeight * scale;
+    var mx = Math.max(0, (iw - sw) / 2), my = Math.max(0, (ih - sh) / 2);
+    panX = Math.max(-mx, Math.min(mx, panX));
+    panY = Math.max(-my, Math.min(my, panY));
+  }
+
+  function zoomAt(delta, cx, cy) {
+    var prev = scale;
+    scale = Math.max(MIN, Math.min(MAX, scale * delta));
+    if (scale === prev) return;
+    var rect = stage.getBoundingClientRect();
+    var ox = (cx != null ? cx : rect.left + rect.width / 2) - rect.left - rect.width / 2;
+    var oy = (cy != null ? cy : rect.top + rect.height / 2) - rect.top - rect.height / 2;
+    panX -= ox * (scale / prev - 1);
+    panY -= oy * (scale / prev - 1);
+    clamp(); apply();
+  }
+
+  stage.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+  }, { passive: false });
+
+  stage.addEventListener('dblclick', function(e) {
+    if (scale < 2) zoomAt(2 / scale, e.clientX, e.clientY);
+    else { scale = 1; panX = 0; panY = 0; apply(); }
   });
+
+  stage.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    drag = true; lx = e.clientX; ly = e.clientY; e.preventDefault(); apply();
+  });
+
+  function onMove(e) {
+    if (!drag) return;
+    panX += e.clientX - lx; panY += e.clientY - ly;
+    lx = e.clientX; ly = e.clientY; clamp(); apply();
+  }
+  function onUp() { drag = false; apply(); }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+
+  stage.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2)
+      lt = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                      e.touches[0].clientY - e.touches[1].clientY);
+    else if (e.touches.length === 1 && scale > 1) {
+      drag = true; lx = e.touches[0].clientX; ly = e.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  stage.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+      var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      zoomAt(d / lt, cx, cy); lt = d;
+    } else if (e.touches.length === 1 && drag) {
+      panX += e.touches[0].clientX - lx; panY += e.touches[0].clientY - ly;
+      lx = e.touches[0].clientX; ly = e.touches[0].clientY; clamp(); apply();
+    }
+  }, { passive: false });
+  stage.addEventListener('touchend', function() { drag = false; apply(); });
+
+  modal.querySelector('#zm-in').onclick    = function() { zoomAt(1.3); };
+  modal.querySelector('#zm-out').onclick   = function() { zoomAt(1 / 1.3); };
+  modal.querySelector('#zm-reset').onclick = function() { scale=1; panX=0; panY=0; apply(); };
+  modal.querySelector('#zm-close').onclick = close;
+
+  function onKey(e) {
+    if (e.key === 'Escape')               close();
+    if (e.key === '+' || e.key === '=')  zoomAt(1.3);
+    if (e.key === '-')                    zoomAt(1 / 1.3);
+    if (e.key === '0') { scale=1; panX=0; panY=0; apply(); }
+  }
+  document.addEventListener('keydown', onKey);
+
+  function close() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    document.removeEventListener('keydown',   onKey);
+    modal.remove();
+  }
+
+  apply();
 }
 
 // ================================================================
