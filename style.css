@@ -1393,3 +1393,74 @@ body::before {
   overflow-y: auto;
   width: 100%;
 }
+
+/* ── 정답 공개 이미지 클릭 힌트 ──────────────────────── */
+.rb-zoom-hint {
+  font-size: 12px; color: rgba(255,255,255,.7);
+  margin-top: 8px; letter-spacing: .04em;
+}
+.reveal-img-col::after { display: none; }   /* 기존 ::after 힌트 제거 */
+
+.article-btn {
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+/* ── 플레이어 결과 재디자인 ───────────────────────────── */
+.pr-score-chips {
+  display: flex; gap: 10px; margin-top: 8px; justify-content: center;
+}
+.pr-chip {
+  font-size: 14px; font-weight: 700;
+  padding: 4px 14px; border-radius: 20px;
+}
+.pr-chip-ok { background: rgba(76,206,122,.2); color: var(--green); border: 1px solid var(--green); }
+.pr-chip-ng { background: rgba(240,82,82,.2);  color: var(--red);   border: 1px solid var(--red); }
+
+.pr-row {
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.pr-row-news {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.pr-answer-badge {
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
+  flex-shrink: 0;
+}
+.pr-answer-badge.ans-real { background: rgba(76,206,122,.2);  color: var(--green); border: 1px solid var(--green); }
+.pr-answer-badge.ans-fake { background: rgba(240,82,82,.2);   color: var(--red);   border: 1px solid var(--red); }
+
+.pr-news-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+}
+
+.pr-row-action {
+  display: flex; align-items: center; gap: 8px;
+  padding-left: 28px;   /* #번호 너비만큼 들여쓰기 */
+}
+
+.pr-side-label {
+  font-size: 12px; color: var(--text-dim);
+  background: var(--card2); padding: 2px 8px; border-radius: 6px;
+}
+.pr-action-amt {
+  font-size: 12px; color: var(--text-dim);
+}
+
+.pr-result-badge {
+  font-size: 12px; font-weight: 700;
+  padding: 3px 10px; border-radius: 8px;
+  margin-left: auto;
+}
+.pr-result-badge.rb-ok   { background: rgba(76,206,122,.2);  color: var(--green); }
+.pr-result-badge.rb-ng   { background: rgba(240,82,82,.2);   color: var(--red); }
+.pr-result-badge.rb-pass { background: var(--card2); color: var(--text-faint); }
+
+/* 행 구분선 */
+.pr-row + .pr-row { border-top: 1px solid var(--border); }

@@ -922,16 +922,19 @@ function viewResults() {
   <div class="reveal-landscape">
     <div class="reveal-img-col">
       <div class="reveal-card">
-        <img src="${n.imageData}" class="reveal-img reveal-img-clickable" alt=""
-             data-action="zoom" data-src="${n.imageData}" title="클릭하면 기사 전체 보기">
-        <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}">
+        <img src="${n.imageData}" class="reveal-img" alt="">
+        <div class="reveal-badge ${isReal ? 'rb-real' : 'rb-fake'}"
+             data-action="zoom" data-src="${n.imageData}" style="cursor:zoom-in">
           <div class="rb-icon">${isReal ? '✅' : '❌'}</div>
           <div class="rb-text">${isReal ? '진짜 뉴스' : '가짜 뉴스'}</div>
+          <div class="rb-zoom-hint">🔍 클릭하여 기사 보기</div>
         </div>
       </div>
     </div>
     <div class="reveal-side-col">
       ${n.title ? `<div class="reveal-news-title">${esc(n.title)}</div>` : ''}
+      <button class="btn btn-outline btn-sm article-btn"
+              data-action="zoom" data-src="${n.imageData}">📰 기사 전체 보기</button>
       <div class="result-rows">${rows}</div>
       <button class="btn btn-primary btn-lg" data-action="reveal-next">
         ${isLast ? '📊 플레이어별 결과 보기 →' : '다음 뉴스 →'}
@@ -966,16 +969,16 @@ function viewPlayerResult(pidx) {
     if (state.mode === 'auction') {
       if (result?.purchase?.playerId === player.id) {
         const win = n.answer === 'real';
-        return { n, idx, label: `${won(result.purchase.price)} 구매`, win, participated: true };
+        return { n, idx, action: `${won(result.purchase.price)} 구매`, win, side: null, participated: true };
       }
     } else {
       const inv = result?.investments?.find(i => i.playerId === player.id);
       if (inv && Number(inv.amount) > 0) {
         const win = inv.side === n.answer;
-        return { n, idx, label: `${inv.side === 'real' ? '진짜' : '가짜'} ${won(inv.amount)} 투자`, win, participated: true };
+        return { n, idx, action: `${won(inv.amount)} 투자`, win, side: inv.side, participated: true };
       }
     }
-    return { n, idx, label: '패스', win: null, participated: false };
+    return { n, idx, action: '패스', win: null, side: null, participated: false };
   });
 
   const correctCnt = breakdown.filter(b => b.win === true).length;
@@ -988,35 +991,39 @@ function viewPlayerResult(pidx) {
     <div class="pr-player-badge" style="--c:${color(pi)}">
       <span class="pr-num">${pidx + 1} / ${state.players.length}</span>
       <span class="pr-name">${esc(player.name)}</span>
+      <div class="pr-score-chips">
+        <span class="pr-chip pr-chip-ok">✅ 정답 ${correctCnt}</span>
+        <span class="pr-chip pr-chip-ng">❌ 오답 ${wrongCnt}</span>
+      </div>
     </div>
 
     <div class="pr-breakdown">
-      ${breakdown.map(b => `
-      <div class="pr-row ${b.win === true ? 'pr-win' : b.win === false ? 'pr-lose' : 'pr-pass'}">
-        <div class="pr-row-left">
+      ${breakdown.map(b => {
+        const answerLabel = b.n.answer === 'real' ? '진짜' : '가짜';
+        const answerClass = b.n.answer === 'real' ? 'ans-real' : 'ans-fake';
+        const sideLabel = b.side ? (b.side === 'real' ? '진짜 선택' : '가짜 선택') : '';
+        const resultIcon = b.win === true ? '✅ 정답!' : b.win === false ? '❌ 오답' : '—';
+        const rowClass = b.win === true ? 'pr-win' : b.win === false ? 'pr-lose' : 'pr-pass';
+        return `
+      <div class="pr-row ${rowClass}">
+        <div class="pr-row-news">
           <span class="pr-news-num">#${b.idx + 1}</span>
+          <span class="pr-answer-badge ${answerClass}">${answerLabel}</span>
           <span class="pr-news-title">${esc(b.n.title || `뉴스 ${b.idx + 1}`)}</span>
         </div>
-        <div class="pr-row-right">
-          <span class="pr-action">${b.label}</span>
-          <span class="pr-result-icon">
-            ${b.win === true ? '✅' : b.win === false ? '❌' : '—'}
-          </span>
+        <div class="pr-row-action">
+          ${sideLabel ? `<span class="pr-side-label">${sideLabel}</span>` : ''}
+          <span class="pr-action-amt">${b.action}</span>
+          <span class="pr-result-badge ${rowClass === 'pr-win' ? 'rb-ok' : rowClass === 'pr-lose' ? 'rb-ng' : 'rb-pass'}">${resultIcon}</span>
         </div>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>
 
     <div class="pr-summary">
-      <div class="pr-sum-row">
-        <span class="pr-sum-label">✅ 정답</span>
-        <span class="pr-sum-val pr-correct">${correctCnt}개</span>
-        <span class="pr-sum-label">❌ 오답</span>
-        <span class="pr-sum-val pr-wrong">${wrongCnt}개</span>
-      </div>
       ${pb.bonus > 0 ? `
       <div class="pr-bonus-row">
-        🎯 정답 보너스 ${pb.cnt}개 × ${won(state.correctBonus)} =
-        <strong>+${won(pb.bonus)}</strong>
+        🎯 정답 보너스 &nbsp;${pb.cnt}개 × ${won(state.correctBonus)} = <strong>+${won(pb.bonus)}</strong>
       </div>` : ''}
       <div class="pr-balance-row">
         <span>최종 잔액</span>
