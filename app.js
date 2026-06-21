@@ -47,6 +47,7 @@ function freshState() {
     },
     investInputs: {},
     roundResults: [],
+    roundReady: false,      // false: 준비 화면 표시 / true: 경매·투자 진행
     gameOrder: [],          // 셔플된 뉴스 ID 순서 (게임 내내 유지)
     revealIndex: 0,
     revealAnswerShown: false, // 정답 확인 클릭 전/후
@@ -72,6 +73,7 @@ let state;
       if (state.expandedBundleId == null) state.expandedBundleId = null;
       if (state.correctBonus == null)    state.correctBonus = DEF_CORRECT_BONUS;
       if (state.randomOrder == null)     state.randomOrder = true;
+      if (state.roundReady == null)      state.roundReady = false;
       if (!state.playerBonuses)          state.playerBonuses = {};
       if (!state.news)                   state.news = [];
       state.news.forEach(n => { delete n.weight; });
@@ -680,6 +682,21 @@ function viewAuction() {
   const n     = activeNews[gameIndex];
   const total = activeNews.length;
 
+  // ── 준비 화면: 게임 시작 시 1회만 표시 ──
+  if (!state.roundReady) {
+    return `
+<div class="auction">
+  ${statusBar()}
+  <div class="round-ready-screen">
+    <div class="rr-badge">🏛️ 경매 모드</div>
+    <p class="rr-hint">뉴스를 충분히 살펴보세요!<br>잠시 후 경매가 시작됩니다.</p>
+    <button class="btn btn-gold btn-lg rr-start-btn" data-action="start-round">
+      🔨 경매 시작
+    </button>
+  </div>
+</div>`;
+  }
+
   if (auction.status === 'awarded' || auction.status === 'passed') {
     const isLast = gameIndex >= total - 1;
     const nextBtn = `<button class="btn btn-primary btn-lg" data-action="auction-next">
@@ -802,6 +819,21 @@ function viewInvestment() {
   const activeNews = getActiveNews();
   const n     = activeNews[gameIndex];
   const total = activeNews.length;
+
+  // ── 준비 화면: 게임 시작 시 1회만 표시 ──
+  if (!state.roundReady) {
+    return `
+<div class="investment">
+  ${statusBar()}
+  <div class="round-ready-screen">
+    <div class="rr-badge">📈 투자 모드</div>
+    <p class="rr-hint">뉴스를 충분히 살펴보세요!<br>잠시 후 투자가 시작됩니다.</p>
+    <button class="btn btn-gold btn-lg rr-start-btn" data-action="start-round">
+      📈 투자 시작
+    </button>
+  </div>
+</div>`;
+  }
 
   const confirmedCount = state.players.filter(p => {
     const inp = investInputs[p.id];
@@ -1269,6 +1301,7 @@ function handleClick(e) {
       state.mode = el.dataset.mode; break;
 
     case 'tab': state.adminTab = el.dataset.tab; break;
+    case 'start-round': state.roundReady = true; break;
     case 'set-order-mode':
       state.randomOrder = el.dataset.val === 'random'; break;
 
@@ -1368,6 +1401,7 @@ function handleClick(e) {
       state.revealIndex = 0;
       state.revealAnswerShown = false;
       state.playerRevealIndex = -1;
+      state.roundReady = false;   // 게임 전체에서 한 번만 보여줄 준비 화면
       if (state.mode === 'auction') initAuctionRound(); else initInvestRound();
       break;
     }
