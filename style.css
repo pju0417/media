@@ -1548,3 +1548,108 @@ body::before {
   /* 드래그 중 부드럽게 */
   will-change: transform;
 }
+
+/* =====================================================
+   뉴스 순서 설정 (설정 탭)
+   ===================================================== */
+.order-toggle-row {
+  display: flex; gap: 12px; margin-bottom: 10px;
+}
+.order-toggle-btn {
+  flex: 1; padding: 16px; text-align: center;
+  border: 2px solid var(--border); border-radius: var(--radius);
+  background: var(--card); color: var(--text-dim);
+  cursor: pointer; transition: all .15s;
+  font-family: 'Noto Sans KR', sans-serif; font-size: 14px; font-weight: 700;
+  line-height: 1.6;
+}
+.order-toggle-btn span {
+  display: block; font-size: 11px; font-weight: 400; color: var(--text-faint); margin-top: 4px;
+}
+.order-toggle-btn:hover { border-color: var(--text-dim); }
+.order-toggle-btn.order-active {
+  border-color: var(--gold); background: rgba(240,192,64,.08); color: var(--gold);
+}
+.order-toggle-btn.order-active span { color: var(--gold-dim); }
+
+.order-hint {
+  font-size: 12px; color: var(--text-faint); margin-top: 8px;
+  line-height: 1.6;
+}
+
+/* =====================================================
+   꾸러미 순서 조정 목록 (▲▼)
+   ===================================================== */
+.bundle-order-section {
+  margin-bottom: 16px;
+  border: 1px solid rgba(240,192,64,.25);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(240,192,64,.04);
+}
+.bundle-order-section .bundle-hint {
+  color: var(--gold-dim); margin-bottom: 10px;
+}
+
+.bundle-order-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.bol-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px;
+}
+
+.bol-num {
+  font-size: 13px; font-weight: 900; color: var(--gold);
+  min-width: 20px; text-align: center; flex-shrink: 0;
+}
+
+.bol-thumb {
+  width: 40px; height: 30px; object-fit: cover;
+  border-radius: 5px; flex-shrink: 0;
+}
+
+.bol-title {
+  flex: 1; font-size: 12px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
+
+.bol-arrows {
+  display: flex; gap: 3px; flex-shrink: 0;
+}
+
+.bol-arrow-btn {
+  width: 26px; height: 26px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-dim); border-radius: 5px;
+  cursor: pointer; font-size: 11px; display: flex;
+  align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.bol-arrow-btn:hover:not(:disabled) {
+  border-color: var(--gold); color: var(--gold);
+}
+.bol-arrow-btn:disabled { opacity: .25; cursor: not-allowed; }
+
+/* =====================================================
+   가격 내리기 버튼 (경매 실수 보정용)
+   ===================================================== */
+.price-btn-row {
+  display: flex; gap: 8px;
+}
+.price-btn-row .btn-raise { flex: 3; }
+
+.btn-lower {
+  flex: 1;
+  background: var(--card2); color: var(--text-dim);
+  border: 1px solid var(--border);
+  font-size: 13px; line-height: 1.4;
+  padding: 18px 8px; border-radius: 10px; text-align: center;
+}
+.btn-lower:hover:not(:disabled) {
+  border-color: var(--red); color: var(--red);
+}
+.btn-lower small { font-size: 10px; }

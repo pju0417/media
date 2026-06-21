@@ -35,6 +35,7 @@ function freshState() {
     auctionStartPrice: DEF_START,
     auctionStep: DEF_STEP,
     correctBonus: DEF_CORRECT_BONUS,  // 정답 1개당 추가 보너스
+    randomOrder: true,       // true: 매번 무작위 섞기 / false: 꾸러미에 설정한 순서 그대로
     playerBonuses: {},       // { playerId: { cnt, bonus } } — 결과 계산 후 저장
     browseIndex: 0,
     gameIndex: 0,
@@ -70,6 +71,7 @@ let state;
       if (state.activeBundleId == null)  state.activeBundleId = null;
       if (state.expandedBundleId == null) state.expandedBundleId = null;
       if (state.correctBonus == null)    state.correctBonus = DEF_CORRECT_BONUS;
+      if (state.randomOrder == null)     state.randomOrder = true;
       if (!state.playerBonuses)          state.playerBonuses = {};
       if (!state.news)                   state.news = [];
       state.news.forEach(n => { delete n.weight; });
@@ -171,7 +173,8 @@ function getActiveNews() {
   return state.news.slice();
 }
 
-// 뉴스를 섞어 state.gameOrder에 저장
+// 뉴스 순서를 결정해 state.gameOrder에 저장
+// randomOrder가 true면 매번 무작위 셔플, false면 꾸러미에 설정한 순서 그대로 사용
 function buildGameNews() {
   let ids;
   if (state.activeBundleId) {
@@ -182,12 +185,17 @@ function buildGameNews() {
   } else {
     ids = state.news.map(n => n.id);
   }
-  const a = [...ids];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+
+  if (state.randomOrder) {
+    const a = [...ids];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    state.gameOrder = a;
+  } else {
+    state.gameOrder = [...ids];   // 설정된 순서 그대로
   }
-  state.gameOrder = a;   // state에 직접 저장 → render/save에 무관하게 유지
 }
 
 function clearGameNews() {
@@ -426,7 +434,7 @@ function tabBundles() {
     ${state.bundles.map(b => {
       const isActive   = String(state.activeBundleId) === String(b.id);
       const isExpanded = state.expandedBundleId === b.id;
-      const bundleNews = b.newsIds.map(nid => state.news.find(n => n.id === nid)).filter(Boolean);
+      const bundleNews = b.newsIds.map(nid => state.news.find(n => String(n.id) === String(nid))).filter(Boolean);
       const canSelect  = bundleNews.length >= 2 && bundleNews.every(n => n.answer);
 
       return `
@@ -453,6 +461,27 @@ function tabBundles() {
 
         ${isExpanded ? `
         <div class="bundle-body">
+          ${!state.randomOrder && bundleNews.length > 0 ? `
+          <div class="bundle-order-section">
+            <div class="bundle-hint">📋 게임 진행 순서 (순서가 그대로 적용됩니다)</div>
+            <div class="bundle-order-list">
+              ${bundleNews.map((n, oi) => `
+              <div class="bol-row">
+                <span class="bol-num">${oi + 1}</span>
+                <img src="${n.imageData}" class="bol-thumb" alt="">
+                <span class="bol-title">${esc(n.title || `뉴스 ${oi + 1}`)}</span>
+                ${n.answer === 'real' ? '<span class="bng-tag bng-real">진짜</span>'
+                  : n.answer === 'fake' ? '<span class="bng-tag bng-fake">가짜</span>'
+                  : '<span class="bng-tag bng-none">미설정</span>'}
+                <div class="bol-arrows">
+                  <button class="bol-arrow-btn" data-action="bundle-news-up" data-id="${n.id}" data-bid="${b.id}"
+                          ${oi === 0 ? 'disabled' : ''}>▲</button>
+                  <button class="bol-arrow-btn" data-action="bundle-news-down" data-id="${n.id}" data-bid="${b.id}"
+                          ${oi === bundleNews.length - 1 ? 'disabled' : ''}>▼</button>
+                </div>
+              </div>`).join('')}
+            </div>
+          </div>` : ''}
           <div class="bundle-hint">클릭하여 뉴스를 추가/제거하세요</div>
           <div class="bundle-news-grid">
             ${state.news.map((n, ni) => {
@@ -508,6 +537,27 @@ function tabSettings() {
       <span>원</span>
     </div>
   </div>
+
+  <hr style="border-color:var(--border);margin:24px 0">
+  <h3 style="margin-bottom:8px">🔀 뉴스 제시 순서</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.7">
+    게임 시작 시 뉴스가 나오는 순서를 정합니다.
+  </p>
+
+  <div class="order-toggle-row">
+    <button class="order-toggle-btn ${state.randomOrder ? 'order-active' : ''}"
+            data-action="set-order-mode" data-val="random">
+      🎲 무작위 순서<br><span>매 게임마다 랜덤으로 섞기</span>
+    </button>
+    <button class="order-toggle-btn ${!state.randomOrder ? 'order-active' : ''}"
+            data-action="set-order-mode" data-val="fixed">
+      📋 설정한 순서<br><span>꾸러미 편집에서 정한 순서대로</span>
+    </button>
+  </div>
+  ${!state.randomOrder ? `
+  <p class="order-hint">
+    💡 "꾸러미" 탭에서 꾸러미를 펼치면 ▲▼ 버튼으로 순서를 조정할 수 있습니다.
+  </p>` : ''}
 
   <hr style="border-color:var(--border);margin:24px 0">
   <h3 style="margin-bottom:8px">🎯 정답 보너스 설정</h3>
@@ -704,9 +754,16 @@ function viewAuction() {
           <div class="price-start">시작가: ${won(state.auctionStartPrice)}</div>
         </div>
         <div class="teacher-btns">
-          <button class="btn btn-raise" data-action="raise-price">
-            📈 가격 올리기<br><small>+${won(state.auctionStep)}</small>
-          </button>
+          <div class="price-btn-row">
+            <button class="btn btn-raise" data-action="raise-price">
+              📈 가격 올리기<br><small>+${won(state.auctionStep)}</small>
+            </button>
+            <button class="btn btn-lower" data-action="lower-price"
+                    ${auction.price <= state.auctionStartPrice ? 'disabled' : ''}
+                    title="잘못 올렸을 때 한 단계 내리기">
+              ↩️<br><small>−${won(state.auctionStep)}</small>
+            </button>
+          </div>
           <div class="t-row">
             <button class="btn btn-success" data-action="finalize"
                     ${auction.activeBidders.length === 0 ? 'disabled' : ''}>🔨 낙찰!</button>
@@ -1212,6 +1269,22 @@ function handleClick(e) {
       state.mode = el.dataset.mode; break;
 
     case 'tab': state.adminTab = el.dataset.tab; break;
+    case 'set-order-mode':
+      state.randomOrder = el.dataset.val === 'random'; break;
+
+    // 꾸러미 내 뉴스 순서 조정 (▲▼)
+    case 'bundle-news-up':
+    case 'bundle-news-down': {
+      const bid = el.dataset.bid;
+      const b   = state.bundles.find(x => String(x.id) === String(bid));
+      if (!b) break;
+      const idx3 = b.newsIds.findIndex(nid => String(nid) === String(id));
+      if (idx3 < 0) break;
+      const swapWith = action === 'bundle-news-up' ? idx3 - 1 : idx3 + 1;
+      if (swapWith < 0 || swapWith >= b.newsIds.length) break;
+      [b.newsIds[idx3], b.newsIds[swapWith]] = [b.newsIds[swapWith], b.newsIds[idx3]];
+      break;
+    }
 
     // Players
     case 'add-player':
@@ -1302,6 +1375,10 @@ function handleClick(e) {
     // Auction
     case 'raise-price':
       state.auction.price += state.auctionStep; state.auction.activeBidders = []; break;
+    case 'lower-price':
+      // 시작가 아래로는 내려가지 않음 (실수로 여러 번 올렸을 때 되돌리기용)
+      state.auction.price = Math.max(state.auctionStartPrice, state.auction.price - state.auctionStep);
+      break;
     case 'toggle-bidder': {
       const list = state.auction.activeBidders;
       const idx2 = list.findIndex(pid => String(pid) === String(id));
