@@ -435,7 +435,7 @@ function tabBundles() {
   <div class="bundle-list">
     ${state.bundles.map(b => {
       const isActive   = String(state.activeBundleId) === String(b.id);
-      const isExpanded = state.expandedBundleId === b.id;
+      const isExpanded = String(state.expandedBundleId) === String(b.id);
       const bundleNews = b.newsIds.map(nid => state.news.find(n => String(n.id) === String(nid))).filter(Boolean);
       const canSelect  = bundleNews.length >= 2 && bundleNews.every(n => n.answer);
 
@@ -1348,18 +1348,18 @@ function handleClick(e) {
     case 'del-bundle':
       if (!confirm('이 꾸러미를 삭제하시겠습니까?')) return;
       state.bundles = state.bundles.filter(b => String(b.id) !== String(id));
-      if (state.activeBundleId === id)   state.activeBundleId = null;
-      if (state.expandedBundleId === id) state.expandedBundleId = null;
+      if (String(state.activeBundleId) === String(id))   state.activeBundleId = null;
+      if (String(state.expandedBundleId) === String(id)) state.expandedBundleId = null;
       break;
     case 'select-bundle':   state.activeBundleId = id; break;
     case 'deselect-bundle': state.activeBundleId = null; break;
     case 'expand-bundle':
-      state.expandedBundleId = state.expandedBundleId === id ? null : id; break;
+      state.expandedBundleId = String(state.expandedBundleId) === String(id) ? null : id; break;
     case 'toggle-bundle-news': {
       const bid = el.dataset.bid;
       const b   = state.bundles.find(x => String(x.id) === String(bid));
       if (!b) break;
-      const idx2 = b.newsIds.indexOf(id);
+      const idx2 = b.newsIds.findIndex(nid => String(nid) === String(id));
       if (idx2 >= 0) b.newsIds.splice(idx2, 1); else b.newsIds.push(id);
       break;
     }
